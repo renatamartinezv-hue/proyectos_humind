@@ -8,8 +8,11 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(layout="wide")
 st.title("Interactive Project Gantt Chart")
 
-# === REPLACE THIS WITH YOUR GOOGLE SHEET ID ===
-SHEET_ID = "1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY" 
+# Paste your ENTIRE Google Sheets URL here
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit?gid=0#gid=0" 
+
+# Type exactly what the tab at the bottom of your Google Sheet says
+TAB_NAME = "Hoja 1" # Change this to "Sheet1" if your Google is in English
 
 # Establish a connection to Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -19,7 +22,7 @@ default_start = datetime(2026, 2, 19).date()
 # 1. Database Logic: Load from Google Sheets
 try:
     # Read the data. ttl=0 ensures we bypass the cache and always get the live data
-    df = conn.read(spreadsheet=SHEET_ID, ttl=0)
+    df = conn.read(spreadsheet=SHEET_URL, worksheet=TAB_NAME, ttl=0)
     
     # Google Sheets might return empty rows; drop them to keep things clean
     df = df.dropna(how="all") 
@@ -59,7 +62,7 @@ edited_df = st.data_editor(
 # 3. Add a Save Button to write changes to Google Sheets
 if st.button("💾 Save Changes to Google Sheets"):
     try:
-        conn.update(spreadsheet=SHEET_ID, data=edited_df)
+        conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=edited_df)
         st.success("Changes successfully saved to the live database!")
         st.cache_data.clear() # Clear memory so the next load is fresh
     except Exception as e:
