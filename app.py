@@ -39,7 +39,7 @@ except Exception as e:
 
 st.write("### 1. Edit the Project Schedule")
 
-# 3. Create the Data Editor (Updated the Start Date header!)
+# 3. Create the Data Editor
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
@@ -49,7 +49,7 @@ edited_df = st.data_editor(
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
-        "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"), # Renamed this!
+        "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
     }
 )
 
@@ -79,10 +79,11 @@ try:
             else:
                 t_start = default_start
                 
-        # Scenario A: Dependent Task (NEW LOGIC HERE)
+        # Scenario A: Dependent Task
         else:
-            earliest_start = calculated_data[str(t_pre)]["Finish"] + timedelta(days=1)
-            # If the user picked a date, AND that date is later than the earliest start, use it!
+            # FIX 1: Removed the "+ timedelta(days=1)" here so they touch!
+            earliest_start = calculated_data[str(t_pre)]["Finish"] 
+            
             if pd.notna(t_manual_start) and t_manual_start > earliest_start:
                 t_start = t_manual_start
             else:
@@ -98,19 +99,27 @@ try:
         
     final_df = pd.DataFrame(list(calculated_data.values()))
     
-    # 4. Plot the Gantt Chart (NEW COLOR LOGIC HERE)
-    # I added 'color_discrete_sequence' which changes the theme. 
-    # You can also use specific hex colors like: color_discrete_sequence=["#1f77b4", "#ff7f0e", "#2ca02c"]
+    # Plot the Gantt Chart
     fig = px.timeline(
         final_df, 
         x_start="Start", 
         x_end="Finish", 
         y="Task", 
         color="Task",
-        color_discrete_sequence=px.colors.qualitative.Pastel 
+        color_discrete_sequence=px.colors.qualitative.Pastel
     )
     
     fig.update_yaxes(autorange="reversed")
+    
+    # FIX 2 & 3: Upgrading the background, gridlines, and date formatting!
+    fig.update_layout(plot_bgcolor='white') # White background makes grids visible
+    fig.update_xaxes(
+        showgrid=True, 
+        gridcolor='lightgray', 
+        gridwidth=1,
+        tickformat="%b %d, %Y" # Formats dates clearly like "Feb 19, 2026"
+    )
+    
     st.plotly_chart(fig, width="stretch")
 
 except KeyError as e:
