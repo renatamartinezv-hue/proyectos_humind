@@ -12,31 +12,24 @@ st.title("Interactive Project Gantt Chart")
 # Paste your ENTIRE Google Sheets URL here:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
 
-# Type exactly what the tab at the bottom of your Google Sheet says (e.g., "Hoja 1" or "Sheet1"):
+# Type exactly what the tab at the bottom of your Google Sheet says:
 TAB_NAME = "Sheet1" 
 # ============================================
 
-# Establish a connection to Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 default_start = datetime(2026, 2, 19).date()
 
-# 2. Database Logic: Load from Google Sheets
+# 2. Database Logic
 try:
-    # Read the data using the URL and the exact tab name. ttl=0 gets live data.
     df = conn.read(spreadsheet=SHEET_URL, worksheet=TAB_NAME, ttl=0)
-    
-    # Google Sheets might return empty rows; drop them to keep things clean
     df = df.dropna(how="all") 
     
-    # If the sheet is completely empty, load our default starter data
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
             {"Task ID": "T1", "Task Name": "Project Kickoff", "Duration (Days)": 2, "Depends On": None, "Start Date": default_start},
             {"Task ID": "T2", "Task Name": "Market Research", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
         ])
     else:
-        # Convert the text dates from Google back into actual Python Date objects
         df["Start Date"] = pd.to_datetime(df["Start Date"], errors='coerce').dt.date
         st.session_state['tasks'] = df
 
@@ -45,9 +38,8 @@ except Exception as e:
     st.stop()
 
 st.write("### 1. Edit the Project Schedule")
-st.info("💡 **How to use:** Edit the table below. When you are done, click the **Save Changes** button to update the live Google Sheet!")
 
-# 3. Create the Data Editor
+# 3. Create the Data Editor (Updated the Start Date header!)
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
@@ -57,16 +49,15 @@ edited_df = st.data_editor(
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
-        "Start Date": st.column_config.DateColumn("Start Date (If Independent)", format="YYYY-MM-DD"),
+        "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"), # Renamed this!
     }
 )
 
-# 4. Add a Save Button to write changes to Google Sheets
 if st.button("💾 Save Changes to Google Sheets"):
     try:
         conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=edited_df)
         st.success("Changes successfully saved to the live database!")
-        st.cache_data.clear() # Clear memory so the next load is fresh
+        st.cache_data.clear() 
     except Exception as e:
         st.error(f"Failed to save: {e}")
 
@@ -87,9 +78,15 @@ try:
                 t_start = t_manual_start
             else:
                 t_start = default_start
-        # Scenario A: Dependent Task
+                
+        # Scenario A: Dependent Task (NEW LOGIC HERE)
         else:
-            t_start = calculated_data[str(t_pre)]["Finish"] + timedelta(days=1)
+            earliest_start = calculated_data[str(t_pre)]["Finish"] + timedelta(days=1)
+            # If the user picked a date, AND that date is later than the earliest start, use it!
+            if pd.notna(t_manual_start) and t_manual_start > earliest_start:
+                t_start = t_manual_start
+            else:
+                t_start = earliest_start
             
         t_end = t_start + timedelta(days=t_duration)
         
@@ -101,8 +98,18 @@ try:
         
     final_df = pd.DataFrame(list(calculated_data.values()))
     
-    # Plot the Gantt Chart
-    fig = px.timeline(final_df, x_start="Start", x_end="Finish", y="Task", color="Task")
+    # 4. Plot the Gantt Chart (NEW COLOR LOGIC HERE)
+    # I added 'color_discrete_sequence' which changes the theme. 
+    # You can also use specific hex colors like: color_discrete_sequence=["#1f77b4", "#ff7f0e", "#2ca02c"]
+    fig = px.timeline(
+        final_df, 
+        x_start="Start", 
+        x_end="Finish", 
+        y="Task", 
+        color="Task",
+        color_discrete_sequence=px.colors.qualitative.Pastel 
+    )
+    
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, width="stretch")
 
