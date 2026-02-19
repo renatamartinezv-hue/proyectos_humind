@@ -4,7 +4,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-# Set up the webpage layout
+# Set up the webpage structure
 st.set_page_config(layout="wide")
 st.title("Interactive Project Gantt Chart")
 
