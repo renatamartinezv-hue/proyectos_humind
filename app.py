@@ -13,7 +13,7 @@ st.title("Interactive Project Gantt Chart")
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
 
 # Type exactly what the tab at the bottom of your Google Sheet says (e.g., "Hoja 1" or "Sheet1"):
-TAB_NAME = "Hoja 1" 
+TAB_NAME = "Sheet1" 
 # ============================================
 
 # Establish a connection to Google Sheets
