@@ -85,25 +85,3 @@ except KeyError as e:
     st.error(f"**Dependency Error:** Check your 'Depends On' column. Ensure task {e} exists.")
 except Exception as e:
     st.error("Please ensure all fields are filled out correctly.")
-  import subprocess
-from google.colab import output
-import time
-
-# 1. Force-quit any old, stuck Streamlit servers
-!pkill -f streamlit
-
-# 2. Start the Streamlit app in the background with special proxy settings
-print("Starting the Streamlit server...")
-process = subprocess.Popen([
-    "streamlit", "run", "app.py", 
-    "--server.port", "8501", 
-    "--server.enableCORS", "false", 
-    "--server.enableXsrfProtection", "false"
-])
-
-# Give the server a couple of seconds to boot up completely
-time.sleep(3)
-
-# 3. Use Google Colab's built-in proxy to generate a secure, clickable link
-print("Server is ready! Click the link below to open your app:")
-output.serve_kernel_port_as_window(8501)
