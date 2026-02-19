@@ -4,21 +4,26 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-# Set up the webpage structure
+# Set up the webpage layout
 st.set_page_config(layout="wide")
 st.title("Interactive Project Gantt Chart")
 
-# Paste your ENTIRE Google Sheets URL here
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit?gid=0#gid=0" 
+# === 1. SETUP YOUR GOOGLE SHEET INFO HERE ===
+# Paste your ENTIRE Google Sheets URL here:
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
+
+# Type exactly what the tab at the bottom of your Google Sheet says (e.g., "Hoja 1" or "Sheet1"):
+TAB_NAME = "Hoja 1" 
+# ============================================
 
 # Establish a connection to Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 default_start = datetime(2026, 2, 19).date()
 
-# 1. Database Logic: Load from Google Sheets
+# 2. Database Logic: Load from Google Sheets
 try:
-    # Read the data. ttl=0 ensures we bypass the cache and always get the live data
+    # Read the data using the URL and the exact tab name. ttl=0 gets live data.
     df = conn.read(spreadsheet=SHEET_URL, worksheet=TAB_NAME, ttl=0)
     
     # Google Sheets might return empty rows; drop them to keep things clean
@@ -36,13 +41,13 @@ try:
         st.session_state['tasks'] = df
 
 except Exception as e:
-    st.error(f"Could not connect to Google Sheets. Check your Secrets and Sheet ID! Error: {e}")
+    st.error(f"Could not connect to Google Sheets. Check your Secrets and Sheet URL! Error: {e}")
     st.stop()
 
 st.write("### 1. Edit the Project Schedule")
 st.info("💡 **How to use:** Edit the table below. When you are done, click the **Save Changes** button to update the live Google Sheet!")
 
-# 2. Create the Data Editor
+# 3. Create the Data Editor
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
@@ -56,7 +61,7 @@ edited_df = st.data_editor(
     }
 )
 
-# 3. Add a Save Button to write changes to Google Sheets
+# 4. Add a Save Button to write changes to Google Sheets
 if st.button("💾 Save Changes to Google Sheets"):
     try:
         conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=edited_df)
