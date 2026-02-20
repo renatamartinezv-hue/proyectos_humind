@@ -97,7 +97,7 @@ try:
         else:
             dependency_text = f"Depende de: {t_pre} 🔗"
             if t_pre in calculated_data:
-                earliest_start = calculated_data[t_pre]["Original_Finish"] # Tomar final original
+                earliest_start = calculated_data[t_pre]["Original_Finish"] 
             else:
                 earliest_start = default_start 
             
@@ -122,16 +122,11 @@ try:
         o_start = data["Original_Start"]
         o_finish = data["Original_Finish"]
         
-        # Si la barra cruza exactamente por en medio de HOY
         if o_start.date() < hoy and o_finish.date() > hoy:
-            # Parte 1: Lo que ya pasó (Hasta hoy)
             final_tasks.append({**data, "Start": o_start, "Finish": fecha_hoy_segura, "Status": "Pasado"})
-            # Parte 2: Lo que falta (Desde hoy)
             final_tasks.append({**data, "Start": fecha_hoy_segura, "Finish": o_finish, "Status": "Activo"})
-        # Si ya terminó por completo
         elif o_finish.date() <= hoy:
             final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Pasado"})
-        # Si apenas va a empezar
         else:
             final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Activo"})
             
@@ -140,7 +135,6 @@ try:
     if not final_df.empty:
         final_df = final_df.sort_values(by=["Project", "Original_Start"])
         
-        # Las etiquetas siempre muestran las fechas originales, aunque la barra esté partida
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         final_df["Label"] = final_df.apply(
@@ -148,13 +142,12 @@ try:
             axis=1
         )
         
-        # Si es Pasado, le agregamos la etiqueta "(Completado)" para colorearlo distinto
         final_df["Color_Visual"] = final_df.apply(
             lambda row: f"{str(row['Project'])} (Completado)" if row["Status"] == "Pasado" else str(row["Project"]), 
             axis=1
         )
         
-        # === CREADOR DINÁMICO DE COLORES APAGADOS (GRISÁCEOS) ===
+        # === CREADOR DINÁMICO DE COLORES APAGADOS (SÚPER ROBUSTO) ===
         color_map = {} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
@@ -164,30 +157,43 @@ try:
                 base_color = pastel_colors[color_idx % len(pastel_colors)]
                 color_map[p] = base_color
                 
-                # Descomponer el color vivo y mezclarlo al 60% con un tono gris neutro
-                hex_str = base_color.lstrip('#')
-                r, g, b = tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
-                r_muted = int(r * 0.4 + 210 * 0.6)
-                g_muted = int(g * 0.4 + 210 * 0.6)
-                b_muted = int(b * 0.4 + 210 * 0.6)
-                muted_color = f'#{r_muted:02x}{g_muted:02x}{b_muted:02x}'
+                c_str = str(base_color).strip().lower()
+                
+                # Intentamos extraer el RGB, sin importar si es HEX o RGB textual
+                try:
+                    if c_str.startswith('#'):
+                        hex_c = c_str.lstrip('#')
+                        r, g, b = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4))
+                    elif c_str.startswith('rgb'):
+                        nums = c_str[c_str.find('(')+1:c_str.find(')')].split(',')
+                        r, g, b = int(nums[0]), int(nums[1]), int(nums[2])
+                    else:
+                        r, g, b = 150, 150, 150
+                        
+                    # Apagamos el color mezclándolo con gris
+                    r_muted = int(r * 0.4 + 210 * 0.6)
+                    g_muted = int(g * 0.4 + 210 * 0.6)
+                    b_muted = int(b * 0.4 + 210 * 0.6)
+                    muted_color = f'rgb({r_muted},{g_muted},{b_muted})'
+                    
+                except Exception:
+                    # Plan de rescate final: si todo falla, gris claro seguro.
+                    muted_color = "#d3d3d3"
                 
                 color_map[f"{p} (Completado)"] = muted_color
                 color_idx += 1
+        # ==============================================================
     
     st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
     
     if not final_df.empty:
-        # === MÉTTRICAS CORREGIDAS ===
         fecha_inicio_global = final_df["Original_Start"].min()
         fecha_fin_global = final_df["Original_Finish"].max()
         
         dias_totales = (fecha_fin_global - fecha_inicio_global).days
         dias_restantes = max(0, (fecha_fin_global.date() - hoy).days)
         tareas_unicas = final_df["Task"].nunique()
-        
-        # Cuenta solo proyectos cuya fecha final original es hoy o en el futuro
         proyectos_activos = final_df[final_df["Original_Finish"].dt.date >= hoy]["Project"].nunique()
         
         col1, col2, col3, col4 = st.columns(4)
@@ -228,13 +234,11 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        # LÍNEAS SEPARADORAS DE PROYECTOS
         tareas_lista = final_df.drop_duplicates(subset=['Task'])['Project'].tolist()
         for i in range(len(tareas_lista) - 1):
             if tareas_lista[i] != tareas_lista[i+1]:
                 fig.add_hline(y=i + 0.5, line_width=2, line_dash="solid", line_color="black", opacity=0.3)
         
-        # LÍNEA DE "HOY" CON FECHA DINÁMICA
         hoy_ms = int(pd.Timestamp(hoy).timestamp() * 1000)
         fecha_texto = hoy.strftime("%d/%m/%Y") 
         
