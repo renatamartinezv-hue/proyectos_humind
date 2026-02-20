@@ -15,10 +15,9 @@ TAB_NAME = "Sheet1"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 hoy = datetime.today().date()
-# Todo nace como Timestamp nativo de Pandas para evitar choques
 default_start = pd.to_datetime(hoy)
 
-# 2. Lógica de Base de Datos
+# 2. Lógica de Base de Datos y Limpieza
 try:
     df = conn.read(spreadsheet=SHEET_URL, worksheet=TAB_NAME, ttl=0)
     df = df.dropna(how="all") 
@@ -30,6 +29,20 @@ try:
             {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
         ])
     else:
+        # === LIMPIEZA ESTRICTA DE TIPOS DE DATOS ===
+        # 1. Asegurar textos limpios
+        for col in ["Task ID", "Project Name", "Task Name", "Depends On"]:
+            if col in df.columns:
+                df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], None)
+                
+        # 2. Forzar que la duración sea Número Entero
+        if "Duration (Days)" in df.columns:
+            df["Duration (Days)"] = pd.to_numeric(df["Duration (Days)"], errors='coerce').fillna(1).astype(int)
+            
+        # 3. Forzar que las fechas sean objetos Date reales
+        if "Start Date" in df.columns:
+            df["Start Date"] = pd.to_datetime(df["Start Date"], errors='coerce').dt.date
+            
         st.session_state['tasks'] = df
 
 except Exception as e:
@@ -65,22 +78,21 @@ calculated_data = {}
 
 try:
     for index, row in edited_df.iterrows():
-        if pd.isna(row["Task ID"]):
+        if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() == "None":
             continue
             
         t_id = str(row["Task ID"]).strip()
-        t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) else "Sin Proyecto"
+        t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
         t_task = str(row["Task Name"]).strip()
         
         t_pre_raw = row["Depends On"]
-        t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) else ""
+        t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) != "None" else ""
         
         try:
             t_duration = int(row["Duration (Days)"])
         except (ValueError, TypeError):
             t_duration = 1
             
-        # Nos aseguramos de que todo se vuelva Timestamp nativo
         t_manual_start = pd.to_datetime(row["Start Date"]) if pd.notna(row["Start Date"]) else None
         
         if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
@@ -98,7 +110,6 @@ try:
             else:
                 t_start = earliest_start
             
-        # Suma matemática 100% segura usando Timedelta de Pandas
         t_end = t_start + pd.Timedelta(days=t_duration)
         
         calculated_data[t_id] = {
@@ -122,7 +133,6 @@ try:
             axis=1
         )
         
-        # Validamos usando la función .date() contra nuestro hoy original
         final_df["Color_Visual"] = final_df.apply(
             lambda row: "Completado (Gris)" if row["Finish"].date() < hoy else str(row["Project"]), 
             axis=1
@@ -182,7 +192,6 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        # === EL TRUCO: Pasamos la fecha como Texto String ("YYYY-MM-DD") para que Plotly no haga matemáticas ===
         fig.add_vline(
             x=hoy.strftime("%Y-%m-%d"), 
             line_width=3, 
