@@ -6,7 +6,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
 st.set_page_config(layout="wide")
-st.title("Proyectos Humind Planeación")
+st.title("Interactive Multi-Project Gantt Chart")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
@@ -24,12 +24,16 @@ try:
     
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
-            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
-            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
-            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
+            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Description": "Reunión inicial de planeación", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
+            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Description": "Análisis de la competencia", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
+            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Description": "Bocetos y diseño conceptual", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
         ])
     else:
-        for col in ["Task ID", "Project Name", "Task Name", "Depends On"]:
+        # Si la hoja existe pero no tiene la columna Descripción, se la creamos vacía para evitar errores
+        if "Description" not in df.columns:
+            df["Description"] = ""
+            
+        for col in ["Task ID", "Project Name", "Task Name", "Description", "Depends On"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], None)
                 
@@ -56,6 +60,7 @@ edited_df = st.data_editor(
         "Task ID": st.column_config.TextColumn("Task ID", required=True),
         "Project Name": st.column_config.TextColumn("Project Name", required=True), 
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
+        "Description": st.column_config.TextColumn("Description"), # <--- NUEVA COLUMNA PARA TEXTO EXTRA
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
         "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
@@ -81,6 +86,11 @@ try:
         t_id = str(row["Task ID"]).strip()
         t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
         t_task = str(row["Task Name"]).strip()
+        
+        # Extraemos la descripción de forma segura
+        t_desc_raw = row.get("Description", "")
+        t_desc = str(t_desc_raw).strip() if pd.notna(t_desc_raw) and str(t_desc_raw) != "None" else ""
+        
         t_pre_raw = row["Depends On"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) != "None" else ""
         
@@ -109,6 +119,7 @@ try:
         calculated_data[t_id] = {
             "Project": t_project,
             "Task": t_task,
+            "Description": t_desc,  # <--- GUARDAMOS LA DESCRIPCIÓN AQUÍ
             "Original_Start": t_start,
             "Original_Finish": t_end,
             "Duration": t_duration,
@@ -251,16 +262,15 @@ try:
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
         
-        # === NUEVA SECCIÓN: TABLA DESPLEGABLE CON DETALLES ===
+        # === TABLA DESPLEGABLE CON LA NUEVA COLUMNA DE DESCRIPCIÓN ===
         st.write("---")
         st.write("### 📋 Detalles del Cronograma")
-        with st.expander("Haz clic aquí para desplegar la tabla con las fechas y estados calculados"):
+        with st.expander("Haz clic aquí para desplegar la tabla con las fechas, descripciones y estados calculados"):
             table_data = []
             for t_id, data in calculated_data.items():
                 o_start = data["Original_Start"]
                 o_finish = data["Original_Finish"]
                 
-                # Asignar un estado dinámico basado en las fechas calculadas
                 if o_finish.date() <= hoy:
                     status = "Completado ✅"
                 elif o_start.date() > hoy:
@@ -272,6 +282,7 @@ try:
                     "ID": t_id,
                     "Proyecto": data["Project"],
                     "Tarea": data["Task"],
+                    "Descripción": data["Description"], # <--- LA MOSTRAMOS AQUÍ SOLAMENTE
                     "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
                     "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
                     "Duración": f"{data['Duration']} días",
@@ -279,7 +290,6 @@ try:
                     "Estado": status
                 })
             
-            # Convertimos a DataFrame y mostramos
             df_table = pd.DataFrame(table_data)
             st.dataframe(df_table, use_container_width=True, hide_index=True)
         # ======================================================
