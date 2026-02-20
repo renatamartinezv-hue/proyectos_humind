@@ -65,10 +65,10 @@ calculated_data = {}
 
 try:
     for index, row in edited_df.iterrows():
-        if pd.isna(row["Task ID"]) or pd.isna(row["Duration (Days)"]):
+        # Saltamos filas vacías
+        if pd.isna(row["Task ID"]):
             continue
             
-        # BLINDAJE 1: Forzamos que todos los textos sean tratados como texto (str), incluso si son números
         t_id = str(row["Task ID"]).strip()
         t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) else "Sin Proyecto"
         t_task = str(row["Task Name"]).strip()
@@ -76,10 +76,14 @@ try:
         t_pre_raw = row["Depends On"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) else ""
         
-        t_duration = int(row["Duration (Days)"])
+        # Salvavidas para la duración: Si alguien escribe letras en lugar de números, asume 1 día
+        try:
+            t_duration = int(row["Duration (Days)"])
+        except (ValueError, TypeError):
+            t_duration = 1
+            
         t_manual_start = row["Start Date"]
         
-        # Evaluamos las dependencias de forma segura
         if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
             dependency_text = "Independiente 🟢"
             if pd.notna(t_manual_start):
@@ -111,22 +115,22 @@ try:
     final_df = pd.DataFrame(list(calculated_data.values()))
     
     if not final_df.empty:
-        # BLINDAJE 2: Aseguramos que las columnas maestras sean texto antes de ordenarlas y manipularlas
-        final_df["Project"] = final_df["Project"].astype(str)
-        final_df["Task"] = final_df["Task"].astype(str)
-        
         final_df = final_df.sort_values(by=["Project", "Start"])
         
         final_df["Start_str"] = pd.to_datetime(final_df["Start"]).dt.strftime('%d %b')
         final_df["Finish_str"] = pd.to_datetime(final_df["Finish"]).dt.strftime('%d %b')
         
-        # Ahora que todo es texto garantizado, pegarlo es 100% seguro
-        final_df["Label"] = final_df["Task"] + " (" + final_df["Start_str"] + " - " + final_df["Finish_str"] + ")"
+        # === LA OPCIÓN NUCLEAR: Usamos plantillas (f-strings) en lugar del símbolo + ===
+        # Esto es 100% inmune a los errores de "int and str"
+        final_df["Label"] = final_df.apply(
+            lambda x: f"{str(x['Task'])} ({str(x['Start_str'])} - {str(x['Finish_str'])})", 
+            axis=1
+        )
         
         final_df["Color_Visual"] = final_df.apply(
-            lambda row: "Completado (Gris)" if pd.to_datetime(row["Finish"]).date() < hoy else row["Project"], 
+            lambda row: "Completado (Gris)" if pd.to_datetime(row["Finish"]).date() < hoy else str(row["Project"]), 
             axis=1
-        ).astype(str) # Blindaje final para los colores
+        )
         
         color_map = {"Completado (Gris)": "lightgray"} 
         pastel_colors = px.colors.qualitative.Pastel
