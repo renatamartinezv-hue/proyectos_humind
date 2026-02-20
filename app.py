@@ -9,9 +9,7 @@ st.set_page_config(layout="wide")
 st.title("Interactive Multi-Project Gantt Chart")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
-# Pega tu URL COMPLETA de Google Sheets aquí:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
-
 TAB_NAME = "Sheet1" 
 # ============================================
 
@@ -66,8 +64,12 @@ calculated_data = {}
 
 try:
     for index, row in edited_df.iterrows():
-        t_id = str(row["Task ID"])
-        t_project = row["Project Name"] 
+        # ¡NUEVA DEFENSA!: Si la fila no tiene ID o Duración, la saltamos para que no colapse
+        if pd.isna(row["Task ID"]) or pd.isna(row["Duration (Days)"]):
+            continue
+            
+        t_id = str(row["Task ID"]).strip()
+        t_project = row["Project Name"] if pd.notna(row["Project Name"]) else "Sin Proyecto"
         t_pre = row["Depends On"]
         t_duration = int(row["Duration (Days)"])
         t_manual_start = row["Start Date"]
@@ -80,7 +82,11 @@ try:
                 t_start = default_start
         else:
             dependency_text = f"Depende de: {t_pre} 🔗"
-            earliest_start = calculated_data[str(t_pre)]["Finish"] 
+            # Nos aseguramos de que la tarea previa exista antes de intentar buscarla
+            if str(t_pre).strip() in calculated_data:
+                earliest_start = calculated_data[str(t_pre).strip()]["Finish"] 
+            else:
+                earliest_start = default_start # Si hay error de escritura, usamos fecha base
             
             if pd.notna(t_manual_start) and t_manual_start > earliest_start:
                 t_start = t_manual_start
@@ -91,7 +97,7 @@ try:
         
         calculated_data[t_id] = {
             "Project": t_project,
-            "Task": row["Task Name"],
+            "Task": str(row["Task Name"]),
             "Start": t_start,
             "Finish": t_end,
             "Dependency Info": dependency_text
@@ -99,48 +105,47 @@ try:
         
     final_df = pd.DataFrame(list(calculated_data.values()))
     
-    # --- NUEVA SECCIÓN DE MÉTRICAS (TARJETAS DE RESUMEN) ---
-    st.write("---") # Una línea divisoria elegante
+    st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
     
     if not final_df.empty:
-        # Calculamos la fecha más temprana y la más tardía
         fecha_inicio_global = final_df["Start"].min()
         fecha_fin_global = final_df["Finish"].max()
         dias_totales = (fecha_fin_global - fecha_inicio_global).days
         
-        # Creamos 3 columnas para las tarjetas
         col1, col2, col3 = st.columns(3)
         col1.metric("⏳ Duración Total", f"{dias_totales} días")
         col2.metric("📝 Total de Tareas", len(final_df))
         col3.metric("📁 Proyectos Activos", final_df["Project"].nunique())
-    # --------------------------------------------------------
 
     st.write("### 2. Línea de Tiempo de Proyectos")
     
-    # 4. Graficar el Diagrama de Gantt
-    fig = px.timeline(
-        final_df, 
-        x_start="Start", 
-        x_end="Finish", 
-        y=["Project", "Task"], 
-        color="Project",       
-        hover_data=["Dependency Info"], 
-        color_discrete_sequence=px.colors.qualitative.Pastel
-    )
-    
-    fig.update_yaxes(autorange="reversed")
-    fig.update_layout(plot_bgcolor='white')
-    fig.update_xaxes(
-        showgrid=True, 
-        gridcolor='lightgray', 
-        gridwidth=1,
-        tickformat="%b %d, %Y"
-    )
-    
-    st.plotly_chart(fig, width="stretch", use_container_width=True)
+    if not final_df.empty:
+        fig = px.timeline(
+            final_df, 
+            x_start="Start", 
+            x_end="Finish", 
+            y=["Project", "Task"], 
+            color="Project",       
+            hover_data=["Dependency Info"], 
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(plot_bgcolor='white')
+        fig.update_xaxes(
+            showgrid=True, 
+            gridcolor='lightgray', 
+            gridwidth=1,
+            tickformat="%b %d, %Y"
+        )
+        
+        st.plotly_chart(fig, width="stretch", use_container_width=True)
+    else:
+        st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
 
+# Actualizamos el error para que nos dé los detalles técnicos si algo más falla
 except KeyError as e:
-    st.error(f"**Error de Dependencia:** Revisa tu columna 'Depends On'. La tarea {e} no existe o se calculó en el orden incorrecto.")
+    st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien. Detalles: {e}")
 except Exception as e:
-    st.error("Por favor asegúrate de llenar todos los campos correctamente.")
+    st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
