@@ -15,8 +15,6 @@ TAB_NAME = "Sheet1"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 default_start = datetime(2026, 2, 19).date()
-
-# === NUEVO: Obtenemos la fecha exacta de HOY ===
 hoy = datetime.today().date()
 
 # 2. Lógica de Base de Datos
@@ -70,13 +68,19 @@ try:
         if pd.isna(row["Task ID"]) or pd.isna(row["Duration (Days)"]):
             continue
             
+        # BLINDAJE 1: Forzamos que todos los textos sean tratados como texto (str), incluso si son números
         t_id = str(row["Task ID"]).strip()
-        t_project = row["Project Name"] if pd.notna(row["Project Name"]) else "Sin Proyecto"
-        t_pre = row["Depends On"]
+        t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) else "Sin Proyecto"
+        t_task = str(row["Task Name"]).strip()
+        
+        t_pre_raw = row["Depends On"]
+        t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) else ""
+        
         t_duration = int(row["Duration (Days)"])
         t_manual_start = row["Start Date"]
         
-        if pd.isna(t_pre) or t_pre is None or str(t_pre).strip() == "":
+        # Evaluamos las dependencias de forma segura
+        if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
             dependency_text = "Independiente 🟢"
             if pd.notna(t_manual_start):
                 t_start = t_manual_start
@@ -84,8 +88,8 @@ try:
                 t_start = default_start
         else:
             dependency_text = f"Depende de: {t_pre} 🔗"
-            if str(t_pre).strip() in calculated_data:
-                earliest_start = calculated_data[str(t_pre).strip()]["Finish"] 
+            if t_pre in calculated_data:
+                earliest_start = calculated_data[t_pre]["Finish"] 
             else:
                 earliest_start = default_start 
             
@@ -98,7 +102,7 @@ try:
         
         calculated_data[t_id] = {
             "Project": t_project,
-            "Task": str(row["Task Name"]),
+            "Task": t_task,
             "Start": t_start,
             "Finish": t_end,
             "Dependency Info": dependency_text
@@ -107,25 +111,27 @@ try:
     final_df = pd.DataFrame(list(calculated_data.values()))
     
     if not final_df.empty:
+        # BLINDAJE 2: Aseguramos que las columnas maestras sean texto antes de ordenarlas y manipularlas
+        final_df["Project"] = final_df["Project"].astype(str)
+        final_df["Task"] = final_df["Task"].astype(str)
+        
         final_df = final_df.sort_values(by=["Project", "Start"])
         
         final_df["Start_str"] = pd.to_datetime(final_df["Start"]).dt.strftime('%d %b')
         final_df["Finish_str"] = pd.to_datetime(final_df["Finish"]).dt.strftime('%d %b')
+        
+        # Ahora que todo es texto garantizado, pegarlo es 100% seguro
         final_df["Label"] = final_df["Task"] + " (" + final_df["Start_str"] + " - " + final_df["Finish_str"] + ")"
         
-        # === NUEVO: Lógica de Colores (Gris para terminados, Color para activos) ===
-        # Si la fecha final es menor al día de hoy, lo marcamos como completado
         final_df["Color_Visual"] = final_df.apply(
             lambda row: "Completado (Gris)" if pd.to_datetime(row["Finish"]).date() < hoy else row["Project"], 
             axis=1
-        )
+        ).astype(str) # Blindaje final para los colores
         
-        # Diccionario maestro para asignar los colores a cada etiqueta
         color_map = {"Completado (Gris)": "lightgray"} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
         
-        # A los proyectos que siguen activos, les damos un color pastel distinto
         for p in final_df["Project"].unique():
             if p not in color_map:
                 color_map[p] = pastel_colors[color_idx % len(pastel_colors)]
@@ -152,10 +158,10 @@ try:
             x_start="Start", 
             x_end="Finish", 
             y="Task", 
-            color="Color_Visual", # Usamos nuestra columna de colores inteligentes
-            color_discrete_map=color_map, # Le pasamos nuestro diccionario de colores
+            color="Color_Visual", 
+            color_discrete_map=color_map, 
             text="Label",     
-            hover_data=["Project", "Dependency Info"], # Mostramos info extra al pasar el ratón
+            hover_data=["Project", "Dependency Info"], 
         )
         
         fig.update_traces(
@@ -174,9 +180,8 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        # === NUEVO: Trazar Línea Roja para HOY ===
         fig.add_vline(
-            x=hoy.strftime("%Y-%m-%d"), # Convertimos la fecha de hoy a texto para el gráfico
+            x=hoy.strftime("%Y-%m-%d"), 
             line_width=3, 
             line_dash="dash", 
             line_color="red", 
@@ -186,7 +191,6 @@ try:
             annotation_font_size=14
         )
         
-        # Dibujar líneas divisorias entre proyectos
         proyectos_lista = final_df['Project'].tolist()
         for i in range(1, len(proyectos_lista)):
             if proyectos_lista[i] != proyectos_lista[i-1]:
