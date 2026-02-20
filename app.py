@@ -6,7 +6,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
 st.set_page_config(layout="wide")
-st.title("Diagnóstico 25 Empresas")
+st.title("Interactive Multi-Project Gantt Chart")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
@@ -29,7 +29,6 @@ try:
             {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Description": "Bocetos y diseño conceptual", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
         ])
     else:
-        # Si la hoja existe pero no tiene la columna Descripción, se la creamos vacía para evitar errores
         if "Description" not in df.columns:
             df["Description"] = ""
             
@@ -60,7 +59,7 @@ edited_df = st.data_editor(
         "Task ID": st.column_config.TextColumn("Task ID", required=True),
         "Project Name": st.column_config.TextColumn("Project Name", required=True), 
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
-        "Description": st.column_config.TextColumn("Description"), # <--- NUEVA COLUMNA PARA TEXTO EXTRA
+        "Description": st.column_config.TextColumn("Description"), 
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
         "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
@@ -87,7 +86,6 @@ try:
         t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
         t_task = str(row["Task Name"]).strip()
         
-        # Extraemos la descripción de forma segura
         t_desc_raw = row.get("Description", "")
         t_desc = str(t_desc_raw).strip() if pd.notna(t_desc_raw) and str(t_desc_raw) != "None" else ""
         
@@ -119,7 +117,7 @@ try:
         calculated_data[t_id] = {
             "Project": t_project,
             "Task": t_task,
-            "Description": t_desc,  # <--- GUARDAMOS LA DESCRIPCIÓN AQUÍ
+            "Description": t_desc,  
             "Original_Start": t_start,
             "Original_Finish": t_end,
             "Duration": t_duration,
@@ -150,7 +148,7 @@ try:
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         final_df["Label"] = final_df.apply(
-            lambda x: f"{str(x['Task'])} ({str(x['Orig_Start_str'])} - {str(x['Orig_Finish_str'])})", 
+            lambda x: f"{str(x['Orig_Start_str'])} - {str(x['Orig_Finish_str'])}", 
             axis=1
         )
         
@@ -204,23 +202,25 @@ try:
         proyectos_activos = final_df[final_df["Original_Finish"].dt.date >= hoy]["Project"].nunique()
         
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("⏳ Duración Total", f"{dias_totales} días", help="Días desde que inició el portafolio hasta que termine todo.")
-        col2.metric("📅 Días Restantes", f"{dias_restantes} días", help="Días que faltan a partir de HOY para terminar todo el portafolio.")
+        col1.metric("⏳ Duración Total", f"{dias_totales} días")
+        col2.metric("📅 Días Restantes", f"{dias_restantes} días")
         col3.metric("📝 Total de Tareas", tareas_unicas)
-        col4.metric("📁 Proyectos Activos", proyectos_activos, help="Proyectos que aún no terminan.")
+        col4.metric("📁 Proyectos Activos", proyectos_activos)
 
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
+        # === MAGIA AQUÍ: AGRUPACIÓN EN EL EJE Y ===
         fig = px.timeline(
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y="Task", 
+            y=["Project", "Task"], # Le pasamos una lista para que cree la jerarquía visual
             color="Color_Visual", 
             color_discrete_map=color_map, 
             text="Label",     
-            hover_data=["Project", "Dependency Info"]
+            hover_data=["Dependency Info"],
+            labels={"Project": "Proyecto", "Task": "Tarea"}
         )
         
         fig.update_traces(
@@ -230,8 +230,15 @@ try:
             insidetextanchor='middle'
         )
         
-        fig.update_yaxes(autorange="reversed", categoryorder='array', categoryarray=final_df['Task'].tolist())
-        fig.update_layout(plot_bgcolor='white', height=max(400, len(final_df['Task'].unique()) * 45)) 
+        # autorange="reversed" pone la primera tarea arriba
+        # title_text="" ELIMINA la molesta leyenda genérica del eje Y
+        fig.update_yaxes(autorange="reversed", title_text="") 
+        
+        fig.update_layout(
+            plot_bgcolor='white', 
+            height=max(400, len(final_df['Task'].unique()) * 45),
+            margin=dict(l=150) # Damos un poco de espacio extra a la izquierda para los nombres largos de proyectos
+        ) 
         
         fig.update_xaxes(
             type='date',
@@ -240,11 +247,6 @@ try:
             gridwidth=1,
             tickformat="%b %d, %Y"
         )
-        
-        tareas_lista = final_df.drop_duplicates(subset=['Task'])['Project'].tolist()
-        for i in range(len(tareas_lista) - 1):
-            if tareas_lista[i] != tareas_lista[i+1]:
-                fig.add_hline(y=i + 0.5, line_width=2, line_dash="solid", line_color="black", opacity=0.3)
         
         hoy_ms = int(pd.Timestamp(hoy).timestamp() * 1000)
         fecha_texto = hoy.strftime("%d/%m/%Y") 
@@ -282,7 +284,7 @@ try:
                     "ID": t_id,
                     "Proyecto": data["Project"],
                     "Tarea": data["Task"],
-                    "Descripción": data["Description"], # <--- LA MOSTRAMOS AQUÍ SOLAMENTE
+                    "Descripción": data["Description"],
                     "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
                     "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
                     "Duración": f"{data['Duration']} días",
