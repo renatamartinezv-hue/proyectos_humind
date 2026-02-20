@@ -90,4 +90,116 @@ try:
             if t_pre in calculated_data:
                 earliest_start = pd.to_datetime(calculated_data[t_pre]["Finish"]).date()
             else:
-                earliest
+                earliest_start = default_start 
+            
+            if t_manual_start and t_manual_start > earliest_start:
+                t_start = t_manual_start
+            else:
+                t_start = earliest_start
+            
+        t_end = t_start + timedelta(days=t_duration)
+        
+        calculated_data[t_id] = {
+            "Project": t_project,
+            "Task": t_task,
+            "Start": t_start,
+            "Finish": t_end,
+            "Dependency Info": dependency_text
+        }
+        
+    final_df = pd.DataFrame(list(calculated_data.values()))
+    
+    if not final_df.empty:
+        final_df["Start"] = pd.to_datetime(final_df["Start"])
+        final_df["Finish"] = pd.to_datetime(final_df["Finish"])
+        
+        final_df = final_df.sort_values(by=["Project", "Start"])
+        
+        final_df["Start_str"] = final_df["Start"].dt.strftime('%d %b')
+        final_df["Finish_str"] = final_df["Finish"].dt.strftime('%d %b')
+        
+        final_df["Label"] = final_df.apply(
+            lambda x: f"{str(x['Task'])} ({str(x['Start_str'])} - {str(x['Finish_str'])})", 
+            axis=1
+        )
+        
+        final_df["Color_Visual"] = final_df.apply(
+            lambda row: "Completado (Gris)" if row["Finish"].date() < hoy else str(row["Project"]), 
+            axis=1
+        )
+        
+        color_map = {"Completado (Gris)": "#d3d3d3"} 
+        pastel_colors = px.colors.qualitative.Pastel
+        color_idx = 0
+        
+        for p in final_df["Project"].unique():
+            if p not in color_map:
+                color_map[p] = pastel_colors[color_idx % len(pastel_colors)]
+                color_idx += 1
+    
+    st.write("---") 
+    st.write("### 📊 Resumen del Portafolio")
+    
+    if not final_df.empty:
+        fecha_inicio_global = final_df["Start"].min()
+        fecha_fin_global = final_df["Finish"].max()
+        dias_totales = (fecha_fin_global - fecha_inicio_global).days
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("⏳ Duración Total", f"{dias_totales} días")
+        col2.metric("📝 Total de Tareas", len(final_df))
+        col3.metric("📁 Proyectos Activos", final_df["Project"].nunique())
+
+    st.write("### 2. Línea de Tiempo de Proyectos")
+    
+    if not final_df.empty:
+        fig = px.timeline(
+            final_df, 
+            x_start="Start", 
+            x_end="Finish", 
+            y="Task", 
+            color="Color_Visual", 
+            color_discrete_map=color_map, 
+            text="Label",     
+            hover_data=["Project", "Dependency Info"]
+        )
+        
+        fig.update_traces(
+            textfont_size=14, 
+            textfont_color="black",
+            textposition='inside', 
+            insidetextanchor='middle'
+        )
+        
+        fig.update_yaxes(autorange="reversed", categoryorder='array', categoryarray=final_df['Task'].tolist())
+        fig.update_layout(plot_bgcolor='white', height=max(400, len(final_df) * 45)) 
+        
+        fig.update_xaxes(
+            type='date',
+            showgrid=True, 
+            gridcolor='lightgray', 
+            gridwidth=1,
+            tickformat="%b %d, %Y"
+        )
+        
+        fecha_hoy_segura = pd.to_datetime(hoy)
+        
+        fig.add_vline(
+            x=fecha_hoy_segura, 
+            line_width=3, 
+            line_dash="dash", 
+            line_color="red", 
+            annotation_text=" HOY ", 
+            annotation_position="top right", 
+            annotation_font_color="red",
+            annotation_font_size=14
+        )
+        
+        st.plotly_chart(fig, width="stretch", use_container_width=True)
+    else:
+        st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
+
+except KeyError as e:
+    st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien. Detalles: {e}")
+except Exception as e:
+    st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
