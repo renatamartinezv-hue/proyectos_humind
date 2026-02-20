@@ -143,11 +143,8 @@ try:
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
+        # Es fundamental ordenar para que la jerarquía agrupe bien los proyectos visualmente
         final_df = final_df.sort_values(by=["Project", "Original_Start"])
-        
-        # === SOLUCIÓN: CREAMOS UNA COLUMNA JERÁRQUICA LIMPIA ===
-        final_df["Jerarquia"] = final_df["Project"] + " ❯ " + final_df["Task"]
-        # =======================================================
         
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
@@ -214,15 +211,17 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
+        # === MAGIA HIERÁRQUICA REAL ===
+        # Le pasamos las listas exactas de datos para crear un eje Multicategoría nativo
         fig = px.timeline(
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y="Jerarquia", # <--- Usamos nuestra nueva columna estable
+            y=[final_df["Project"], final_df["Task"]], # <--- Jerarquía anidada pura
             color="Color_Visual", 
             color_discrete_map=color_map, 
             text="Label",     
-            hover_data=["Project", "Dependency Info"],
+            hover_data=["Dependency Info"],
         )
         
         fig.update_traces(
@@ -232,12 +231,10 @@ try:
             insidetextanchor='middle'
         )
         
-        # Ocultamos el título del eje Y para que se vea limpio
+        # Eliminamos el título genérico del eje Y para máxima limpieza
         fig.update_yaxes(
             autorange="reversed", 
-            title_text="", 
-            categoryorder='array', 
-            categoryarray=final_df['Jerarquia'].tolist()
+            title_text=""
         ) 
         
         fig.update_layout(
