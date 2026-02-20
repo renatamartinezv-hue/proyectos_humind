@@ -143,8 +143,12 @@ try:
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
-        # ES VITAL ORDENAR PRIMERO PARA QUE LA JERARQUÍA FUNCIONE
+        # ES VITAL ORDENAR PRIMERO
         final_df = final_df.sort_values(by=["Project", "Original_Start"])
+        
+        # === ENGAÑAMOS A PLOTLY EXPRESS CON UNA LLAVE ÚNICA TEMPORAL ===
+        final_df["Llave_Secreta"] = final_df["Project"].astype(str) + "|||" + final_df["Task"].astype(str)
+        # ==============================================================
         
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
@@ -211,23 +215,17 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
-        # === AQUÍ ESTÁ LA MAGIA CORREGIDA: ÍNDICE MÚLTIPLE DE PANDAS ===
-        eje_jerarquico = pd.MultiIndex.from_arrays(
-            [final_df["Project"], final_df["Task"]], 
-            names=["Proyecto", "Tarea"]
-        )
-        
+        # Generamos el gráfico base con Plotly Express
         fig = px.timeline(
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y=eje_jerarquico, # Pasamos el índice estructurado, no una lista suelta
+            y="Llave_Secreta", # Pasamos la llave temporal
             color="Color_Visual", 
             color_discrete_map=color_map, 
             text="Label",     
             hover_data=["Dependency Info"],
         )
-        # ==============================================================
         
         fig.update_traces(
             textfont_size=14, 
@@ -236,10 +234,22 @@ try:
             insidetextanchor='middle'
         )
         
+        # === 🔧 EL HACK MAESTRO: MODIFICAMOS LAS TRIPAS DEL GRÁFICO 🔧 ===
+        # Iteramos por cada barra dibujada y reemplazamos la "Llave" por la jerarquía
+        for trace in fig.data:
+            if getattr(trace, "y", None) is not None:
+                proyectos = [str(val).split("|||")[0] for val in trace.y]
+                tareas = [str(val).split("|||")[1] for val in trace.y]
+                trace.y = [proyectos, tareas] # Convertimos a jerarquía nativa de Plotly
+                
+        # Forzamos al layout a interpretar el nuevo eje como multicategoría
         fig.update_yaxes(
             autorange="reversed", 
-            title_text="" # Eliminamos etiquetas estorbosas
-        ) 
+            title_text="",
+            type="multicategory" 
+        )
+        fig.layout.yaxis.categoryarray = None # Limpiamos cualquier rastro de la llave
+        # ================================================================
         
         fig.update_layout(
             plot_bgcolor='white', 
