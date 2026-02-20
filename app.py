@@ -111,7 +111,6 @@ try:
             else:
                 t_start = earliest_start
         
-        # FORZAMOS a que t_start sea un tiempo real antes de sumar días para evitar el error int/str
         t_start = pd.to_datetime(t_start)
         t_end = t_start + pd.Timedelta(days=t_duration)
         
@@ -136,7 +135,6 @@ try:
             axis=1
         )
         
-        # SIMPLIFICADO: Los colores solo dependen del nombre del proyecto
         final_df["Color_Visual"] = final_df["Project"].astype(str)
         
         color_map = {} 
@@ -193,7 +191,16 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        # ELIMINAMOS LA LÍNEA ROJA AQUÍ
+        # === AQUÍ AGREGAMOS LAS LÍNEAS SEPARADORAS DE PROYECTOS ===
+        # Obtenemos la lista ordenada de proyectos
+        lista_proyectos = final_df['Project'].tolist()
+        
+        # Recorremos la lista para encontrar dónde cambia el nombre del proyecto
+        for i in range(len(lista_proyectos) - 1):
+            if lista_proyectos[i] != lista_proyectos[i+1]:
+                # i + 0.5 ubica la línea exactamente en medio de las dos tareas
+                fig.add_hline(y=i + 0.5, line_width=2, line_dash="solid", line_color="black", opacity=0.3)
+        # ==========================================================
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
     else:
