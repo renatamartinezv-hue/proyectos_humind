@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go # <--- NUEVA LIBRERÍA PARA LOS HITOS
+import plotly.graph_objects as go 
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
@@ -10,7 +10,7 @@ st.set_page_config(layout="wide")
 st.title("Diagnóstico 25 Empresas")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
 TAB_NAME = "Sheet1" 
 # ============================================
 
@@ -71,7 +71,7 @@ except Exception as e:
 
 st.write("### 1. Edita el Calendario de Proyectos")
 
-# 3. Editor de Datos
+# 3. Editor de Datos PRINCIPAL (El que sí guarda en la nube)
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
@@ -83,7 +83,6 @@ edited_df = st.data_editor(
         "Description": st.column_config.TextColumn("Description"), 
         "Color": st.column_config.SelectboxColumn(
             "Color de Tarea", 
-            help="Elige un color. Deja 'Por defecto' para mantener los colores organizados por proyecto.",
             options=opciones_color,
             default="Por defecto",
             required=True
@@ -281,8 +280,6 @@ try:
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
-        # === APLICACIÓN DE HITOS (MILESTONES) ===
-        # Buscamos la fecha máxima de fin para cada proyecto
         hitos_x = []
         hitos_y_proy = []
         hitos_y_tarea = []
@@ -304,14 +301,13 @@ try:
             x=hitos_x,
             y=[hitos_y_proy, hitos_y_tarea],
             mode='markers+text',
-            marker=dict(symbol='diamond', size=16, color='#FFD700', line=dict(color='black', width=1.5)),
-            text=[" 🏁 Fin"] * len(hitos_x),
+            marker=dict(symbol='diamond', size=16, color='#D30000', line=dict(color='black', width=1.5)),
+            text=["Fin"] * len(hitos_x),
             textposition="middle right",
             textfont=dict(color="black", size=13, family="Arial Black"),
             hoverinfo='skip',
             showlegend=False
         ))
-        # ========================================
 
         fig.update_yaxes(
             autorange="reversed", 
@@ -338,7 +334,7 @@ try:
         fig.update_layout(
             plot_bgcolor='white', 
             height=max(400, len(final_df['Task'].unique()) * 45),
-            margin=dict(l=150, r=50), # < Le di un poco de margen derecho para que quepa la banderita
+            margin=dict(l=150, r=50),
             showlegend=False 
         ) 
         
@@ -367,8 +363,12 @@ try:
         st.plotly_chart(fig, width="stretch", use_container_width=True)
         
         st.write("---")
-        st.write("### 📋 Detalles del Cronograma")
-        with st.expander("Haz clic aquí para desplegar la tabla con las fechas, descripciones y estados calculados"):
+        # === AQUÍ ESTÁ EL CAMBIO PARA LOS DETALLES DEL CRONOGRAMA ===
+        st.write("### 📋 Detalles del Cronograma (Resultados Calculados)")
+        with st.expander("Haz clic aquí para desplegar la tabla de resultados"):
+            
+            st.info("💡 **Nota:** Esta tabla te muestra el **resultado** de tu cronograma. La hemos desbloqueado para que la edites libremente si quieres descargar un reporte limpio, pero recuerda que **para alterar el gráfico y guardar en Google Sheets, debes editar la primera tabla de arriba**.")
+            
             table_data = []
             for t_id, data in calculated_data.items():
                 o_start = data["Original_Start"]
@@ -395,7 +395,19 @@ try:
                 })
             
             df_table = pd.DataFrame(table_data)
-            st.dataframe(df_table, use_container_width=True, hide_index=True)
+            
+            # Reemplazamos st.dataframe por st.data_editor
+            edited_bottom_table = st.data_editor(df_table, use_container_width=True, hide_index=True)
+            
+            # Botón para descargar el resultado en CSV (Compatible con Excel)
+            csv = edited_bottom_table.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Descargar Tabla (CSV)",
+                data=csv,
+                file_name='reporte_cronograma.csv',
+                mime='text/csv',
+            )
+        # ==========================================================
 
     else:
         st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
