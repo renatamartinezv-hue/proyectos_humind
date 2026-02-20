@@ -6,7 +6,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
 st.set_page_config(layout="wide")
-st.title("Interactive Multi-Project Gantt Chart")
+st.title("Diagnóstico 25 Empresas")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
