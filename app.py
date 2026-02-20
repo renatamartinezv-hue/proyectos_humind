@@ -14,8 +14,8 @@ TAB_NAME = "Sheet1"
 # ============================================
 
 conn = st.connection("gsheets", type=GSheetsConnection)
-default_start = datetime(2026, 2, 19).date()
 hoy = datetime.today().date()
+default_start = hoy # Hacemos que la fecha por defecto sea hoy
 
 # 2. Lógica de Base de Datos
 try:
@@ -65,7 +65,6 @@ calculated_data = {}
 
 try:
     for index, row in edited_df.iterrows():
-        # Saltamos filas vacías
         if pd.isna(row["Task ID"]):
             continue
             
@@ -76,7 +75,6 @@ try:
         t_pre_raw = row["Depends On"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) else ""
         
-        # Salvavidas para la duración: Si alguien escribe letras en lugar de números, asume 1 día
         try:
             t_duration = int(row["Duration (Days)"])
         except (ValueError, TypeError):
@@ -120,19 +118,18 @@ try:
         final_df["Start_str"] = pd.to_datetime(final_df["Start"]).dt.strftime('%d %b')
         final_df["Finish_str"] = pd.to_datetime(final_df["Finish"]).dt.strftime('%d %b')
         
-        # === LA OPCIÓN NUCLEAR: Usamos plantillas (f-strings) en lugar del símbolo + ===
-        # Esto es 100% inmune a los errores de "int and str"
         final_df["Label"] = final_df.apply(
             lambda x: f"{str(x['Task'])} ({str(x['Start_str'])} - {str(x['Finish_str'])})", 
             axis=1
         )
         
+        # === AQUI ESTÁ LA MAGIA DEL COLOR, SIMPLE Y SEGURA ===
         final_df["Color_Visual"] = final_df.apply(
             lambda row: "Completado (Gris)" if pd.to_datetime(row["Finish"]).date() < hoy else str(row["Project"]), 
             axis=1
         )
         
-        color_map = {"Completado (Gris)": "lightgray"} 
+        color_map = {"Completado (Gris)": "#d3d3d3"}  # Gris claro estándar
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
         
@@ -184,6 +181,7 @@ try:
             tickformat="%b %d, %Y"
         )
         
+        # === LA LÍNEA ROJA DE HOY (Sin líneas horizontales conflictivas) ===
         fig.add_vline(
             x=hoy.strftime("%Y-%m-%d"), 
             line_width=3, 
@@ -194,11 +192,6 @@ try:
             annotation_font_color="red",
             annotation_font_size=14
         )
-        
-        proyectos_lista = final_df['Project'].tolist()
-        for i in range(1, len(proyectos_lista)):
-            if proyectos_lista[i] != proyectos_lista[i-1]:
-                fig.add_hline(y=i - 0.5, line_width=2, line_dash="dash", line_color="gray")
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
     else:
