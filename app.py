@@ -148,9 +148,9 @@ try:
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
-        # === AQUÍ ESTÁ EL CAMBIO: AGREGAMOS EL NOMBRE DEL PROYECTO A LA ETIQUETA ===
+        # === AQUÍ ESTÁ EL CAMBIO: AHORA LLAMAMOS AL NOMBRE DE LA TAREA / EVENTO ===
         final_df["Label"] = final_df.apply(
-            lambda x: f"{str(x['Project'])} | {str(x['Orig_Start_str'])} - {str(x['Orig_Finish_str'])}", 
+            lambda x: f"{str(x['Task'])} | {str(x['Orig_Start_str'])} - {str(x['Orig_Finish_str'])}", 
             axis=1
         )
         # ===========================================================================
@@ -223,7 +223,7 @@ try:
         )
         
         fig.update_traces(
-            textfont_size=13, # <- Le bajé un punto a la letra por si el texto es muy largo
+            textfont_size=13, 
             textfont_color="black",
             textposition='inside', 
             insidetextanchor='middle'
