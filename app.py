@@ -16,6 +16,9 @@ TAB_NAME = "Sheet1"
 conn = st.connection("gsheets", type=GSheetsConnection)
 default_start = datetime(2026, 2, 19).date()
 
+# === NUEVO: Obtenemos la fecha exacta de HOY ===
+hoy = datetime.today().date()
+
 # 2. Lógica de Base de Datos
 try:
     df = conn.read(spreadsheet=SHEET_URL, worksheet=TAB_NAME, ttl=0)
@@ -106,10 +109,27 @@ try:
     if not final_df.empty:
         final_df = final_df.sort_values(by=["Project", "Start"])
         
-        # === NUEVO: Creamos las etiquetas con Nombres y Fechas para meterlas en la barra ===
         final_df["Start_str"] = pd.to_datetime(final_df["Start"]).dt.strftime('%d %b')
         final_df["Finish_str"] = pd.to_datetime(final_df["Finish"]).dt.strftime('%d %b')
         final_df["Label"] = final_df["Task"] + " (" + final_df["Start_str"] + " - " + final_df["Finish_str"] + ")"
+        
+        # === NUEVO: Lógica de Colores (Gris para terminados, Color para activos) ===
+        # Si la fecha final es menor al día de hoy, lo marcamos como completado
+        final_df["Color_Visual"] = final_df.apply(
+            lambda row: "Completado (Gris)" if pd.to_datetime(row["Finish"]).date() < hoy else row["Project"], 
+            axis=1
+        )
+        
+        # Diccionario maestro para asignar los colores a cada etiqueta
+        color_map = {"Completado (Gris)": "lightgray"} 
+        pastel_colors = px.colors.qualitative.Pastel
+        color_idx = 0
+        
+        # A los proyectos que siguen activos, les damos un color pastel distinto
+        for p in final_df["Project"].unique():
+            if p not in color_map:
+                color_map[p] = pastel_colors[color_idx % len(pastel_colors)]
+                color_idx += 1
     
     st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
@@ -132,13 +152,12 @@ try:
             x_start="Start", 
             x_end="Finish", 
             y="Task", 
-            color="Project", 
-            text="Label", # <--- NUEVO: Imprime nuestra etiqueta mágica adentro      
-            hover_data=["Dependency Info"], 
-            color_discrete_sequence=px.colors.qualitative.Pastel
+            color="Color_Visual", # Usamos nuestra columna de colores inteligentes
+            color_discrete_map=color_map, # Le pasamos nuestro diccionario de colores
+            text="Label",     
+            hover_data=["Project", "Dependency Info"], # Mostramos info extra al pasar el ratón
         )
         
-        # === NUEVO: Diseño del texto dentro de las barras ===
         fig.update_traces(
             textfont_size=14, 
             textfont_color="black",
@@ -147,7 +166,7 @@ try:
         )
         
         fig.update_yaxes(autorange="reversed", categoryorder='array', categoryarray=final_df['Task'].tolist())
-        fig.update_layout(plot_bgcolor='white', height=max(400, len(final_df) * 45)) # Ajusta altura para que quepa el texto
+        fig.update_layout(plot_bgcolor='white', height=max(400, len(final_df) * 45)) 
         fig.update_xaxes(
             showgrid=True, 
             gridcolor='lightgray', 
@@ -155,11 +174,22 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        # === NUEVO: Dibujar líneas divisorias entre proyectos ===
+        # === NUEVO: Trazar Línea Roja para HOY ===
+        fig.add_vline(
+            x=hoy.strftime("%Y-%m-%d"), # Convertimos la fecha de hoy a texto para el gráfico
+            line_width=3, 
+            line_dash="dash", 
+            line_color="red", 
+            annotation_text=" HOY ", 
+            annotation_position="top right", 
+            annotation_font_color="red",
+            annotation_font_size=14
+        )
+        
+        # Dibujar líneas divisorias entre proyectos
         proyectos_lista = final_df['Project'].tolist()
         for i in range(1, len(proyectos_lista)):
             if proyectos_lista[i] != proyectos_lista[i-1]:
-                # Dibuja una línea punteada gruesa y gris exactamente entre el proyecto anterior y el nuevo
                 fig.add_hline(y=i - 0.5, line_width=2, line_dash="dash", line_color="gray")
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
