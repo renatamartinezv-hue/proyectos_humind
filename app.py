@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go # <--- NUEVA LIBRERÍA PARA LOS HITOS
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
@@ -9,11 +10,11 @@ st.set_page_config(layout="wide")
 st.title("Diagnóstico 25 Empresas")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit"
 TAB_NAME = "Sheet1" 
 # ============================================
 
-# Diccionario de colores (Traduce la opción del usuario a código que entiende Plotly)
+# Diccionario de colores
 COLOR_MAP_ESP = {
     "Por defecto": "",
     "Azul": "#4285F4",
@@ -39,21 +40,18 @@ try:
     
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
-            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Description": "Reunión inicial de planeación", "Color": "Rojo", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
-            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Description": "Análisis de la competencia", "Color": "Azul", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
-            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Description": "Bocetos y conceptualización", "Color": "Por defecto", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
+            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Description": "Reunión inicial", "Color": "Rojo", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
+            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Description": "Análisis", "Color": "Azul", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
+            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Description": "Bocetos", "Color": "Por defecto", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
         ])
     else:
         if "Description" not in df.columns:
             df["Description"] = ""
             
-        # === NUEVA LIMPIEZA DE COLORES ===
         if "Color" not in df.columns:
             df["Color"] = "Por defecto"
         else:
-            # Si hay basura de pruebas anteriores, lo pasa a "Por defecto"
             df["Color"] = df["Color"].apply(lambda x: x if x in opciones_color else "Por defecto")
-        # ==================================
             
         for col in ["Task ID", "Project Name", "Task Name", "Description", "Depends On"]:
             if col in df.columns:
@@ -73,7 +71,7 @@ except Exception as e:
 
 st.write("### 1. Edita el Calendario de Proyectos")
 
-# 3. Editor de Datos (¡Ahora con Dropdown / Selectbox!)
+# 3. Editor de Datos
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
@@ -83,8 +81,6 @@ edited_df = st.data_editor(
         "Project Name": st.column_config.TextColumn("Project Name", required=True), 
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
         "Description": st.column_config.TextColumn("Description"), 
-        
-        # EL CAMBIO MAESTRO: De TextColumn a SelectboxColumn
         "Color": st.column_config.SelectboxColumn(
             "Color de Tarea", 
             help="Elige un color. Deja 'Por defecto' para mantener los colores organizados por proyecto.",
@@ -92,7 +88,6 @@ edited_df = st.data_editor(
             default="Por defecto",
             required=True
         ),
-        
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
         "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
@@ -118,13 +113,9 @@ try:
         t_id = str(row["Task ID"]).strip()
         t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
         t_task = str(row["Task Name"]).strip()
-        
         t_desc_raw = row.get("Description", "")
         t_desc = str(t_desc_raw).strip() if pd.notna(t_desc_raw) and str(t_desc_raw) != "None" else ""
-        
-        # Recuperamos la selección del menú desplegable
         t_color_raw = str(row.get("Color", "Por defecto")).strip()
-        
         t_pre_raw = row["Depends On"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) != "None" else ""
         
@@ -182,7 +173,6 @@ try:
     if not final_df.empty:
         final_df = final_df.sort_values(by=["Project", "Original_Start"])
         final_df["Llave_Secreta"] = final_df["Project"].astype(str) + "|||" + final_df["Task"].astype(str)
-        
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
@@ -213,12 +203,10 @@ try:
             if active_key not in color_map:
                 user_color = str(row.get("Color_Raw", "Por defecto")).strip()
                 
-                # === TRADUCTOR DE COLOR DEL DICCIONARIO ===
                 if user_color != "Por defecto" and user_color in COLOR_MAP_ESP:
                     base_color = COLOR_MAP_ESP[user_color]
                 else:
                     base_color = project_default_colors.get(row["Project"], "#3366cc")
-                # ==========================================
                     
                 color_map[active_key] = base_color
                 
@@ -293,6 +281,38 @@ try:
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
+        # === APLICACIÓN DE HITOS (MILESTONES) ===
+        # Buscamos la fecha máxima de fin para cada proyecto
+        hitos_x = []
+        hitos_y_proy = []
+        hitos_y_tarea = []
+        
+        fechas_fin_proy = {}
+        for idx, row in final_df.iterrows():
+            p = row["Project"]
+            f = row["Original_Finish"]
+            t = row["Task"]
+            if p not in fechas_fin_proy or f > fechas_fin_proy[p]["fecha"]:
+                fechas_fin_proy[p] = {"fecha": f, "tarea": t}
+                
+        for p, datos in fechas_fin_proy.items():
+            hitos_x.append(datos["fecha"])
+            hitos_y_proy.append(p)
+            hitos_y_tarea.append(datos["tarea"])
+            
+        fig.add_trace(go.Scatter(
+            x=hitos_x,
+            y=[hitos_y_proy, hitos_y_tarea],
+            mode='markers+text',
+            marker=dict(symbol='diamond', size=16, color='#FFD700', line=dict(color='black', width=1.5)),
+            text=[" 🏁 Fin"] * len(hitos_x),
+            textposition="middle right",
+            textfont=dict(color="black", size=13, family="Arial Black"),
+            hoverinfo='skip',
+            showlegend=False
+        ))
+        # ========================================
+
         fig.update_yaxes(
             autorange="reversed", 
             title_text="",
@@ -318,7 +338,7 @@ try:
         fig.update_layout(
             plot_bgcolor='white', 
             height=max(400, len(final_df['Task'].unique()) * 45),
-            margin=dict(l=150),
+            margin=dict(l=150, r=50), # < Le di un poco de margen derecho para que quepa la banderita
             showlegend=False 
         ) 
         
