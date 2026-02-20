@@ -103,9 +103,13 @@ try:
         
     final_df = pd.DataFrame(list(calculated_data.values()))
     
-    # LA SOLUCIÓN: Ordenamos la tabla por proyecto antes de dibujar para que queden agrupados visualmente
     if not final_df.empty:
         final_df = final_df.sort_values(by=["Project", "Start"])
+        
+        # === NUEVO: Creamos las etiquetas con Nombres y Fechas para meterlas en la barra ===
+        final_df["Start_str"] = pd.to_datetime(final_df["Start"]).dt.strftime('%d %b')
+        final_df["Finish_str"] = pd.to_datetime(final_df["Finish"]).dt.strftime('%d %b')
+        final_df["Label"] = final_df["Task"] + " (" + final_df["Start_str"] + " - " + final_df["Finish_str"] + ")"
     
     st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
@@ -123,26 +127,40 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
-        # LA SOLUCIÓN: Regresamos a y="Task"
         fig = px.timeline(
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y="Task", # <-- ¡Corregido!
-            color="Project",       
+            y="Task", 
+            color="Project", 
+            text="Label", # <--- NUEVO: Imprime nuestra etiqueta mágica adentro      
             hover_data=["Dependency Info"], 
             color_discrete_sequence=px.colors.qualitative.Pastel
         )
         
-        # Para que el orden Y de Plotly respete cómo ordenamos los proyectos arriba
+        # === NUEVO: Diseño del texto dentro de las barras ===
+        fig.update_traces(
+            textfont_size=14, 
+            textfont_color="black",
+            textposition='inside', 
+            insidetextanchor='middle'
+        )
+        
         fig.update_yaxes(autorange="reversed", categoryorder='array', categoryarray=final_df['Task'].tolist())
-        fig.update_layout(plot_bgcolor='white')
+        fig.update_layout(plot_bgcolor='white', height=max(400, len(final_df) * 45)) # Ajusta altura para que quepa el texto
         fig.update_xaxes(
             showgrid=True, 
             gridcolor='lightgray', 
             gridwidth=1,
             tickformat="%b %d, %Y"
         )
+        
+        # === NUEVO: Dibujar líneas divisorias entre proyectos ===
+        proyectos_lista = final_df['Project'].tolist()
+        for i in range(1, len(proyectos_lista)):
+            if proyectos_lista[i] != proyectos_lista[i-1]:
+                # Dibuja una línea punteada gruesa y gris exactamente entre el proyecto anterior y el nuevo
+                fig.add_hline(y=i - 0.5, line_width=2, line_dash="dash", line_color="gray")
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
     else:
