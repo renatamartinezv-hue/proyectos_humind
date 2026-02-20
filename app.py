@@ -304,7 +304,7 @@ try:
             marker=dict(symbol='diamond', size=16, color='#D30000', line=dict(color='black', width=1.5)),
             text=["Fin"] * len(hitos_x),
             textposition="middle right",
-            textfont=dict(color="black", size=9, family="Arial Black"),
+            textfont=dict(color="black", size=9, family="Arial Light"),
             hoverinfo='skip',
             showlegend=False
         ))
