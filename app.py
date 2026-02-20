@@ -52,4 +52,280 @@ st.write("### 1. Edita el Calendario de Proyectos")
 
 # 3. Editor de Datos
 edited_df = st.data_editor(
-    st
+    st.session_state['tasks'], 
+    num_rows="dynamic", 
+    width="stretch",
+    column_config={
+        "Task ID": st.column_config.TextColumn("Task ID", required=True),
+        "Project Name": st.column_config.TextColumn("Project Name", required=True), 
+        "Task Name": st.column_config.TextColumn("Task Name", required=True),
+        "Description": st.column_config.TextColumn("Description"), 
+        "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
+        "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
+        "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
+    }
+)
+
+if st.button("💾 Guardar Cambios en Google Sheets"):
+    try:
+        conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=edited_df)
+        st.success("¡Base de datos actualizada con éxito!")
+        st.cache_data.clear() 
+    except Exception as e:
+        st.error(f"Error al guardar: {e}")
+
+calculated_data = {}
+
+try:
+    # 4. Cálculo Matemático de Fechas Generales
+    for index, row in edited_df.iterrows():
+        if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() in ["None", ""]:
+            continue
+            
+        t_id = str(row["Task ID"]).strip()
+        t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
+        t_task = str(row["Task Name"]).strip()
+        
+        t_desc_raw = row.get("Description", "")
+        t_desc = str(t_desc_raw).strip() if pd.notna(t_desc_raw) and str(t_desc_raw) != "None" else ""
+        
+        t_pre_raw = row["Depends On"]
+        t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) != "None" else ""
+        
+        try:
+            t_duration = int(row["Duration (Days)"])
+        except (ValueError, TypeError):
+            t_duration = 1
+            
+        t_manual_start = pd.to_datetime(row["Start Date"]) if pd.notna(row["Start Date"]) and row["Start Date"] != "" else None
+        
+        if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
+            dependency_text = "Independiente 🟢"
+            t_start = t_manual_start if t_manual_start is not None else default_start
+        else:
+            dependency_text = f"Depende de: {t_pre} 🔗"
+            if t_pre in calculated_data:
+                earliest_start = calculated_data[t_pre]["Original_Finish"] 
+            else:
+                earliest_start = default_start 
+            
+            t_start = t_manual_start if t_manual_start is not None and t_manual_start > earliest_start else earliest_start
+        
+        t_start = pd.to_datetime(t_start)
+        t_end = t_start + pd.Timedelta(days=t_duration)
+        
+        calculated_data[t_id] = {
+            "Project": t_project,
+            "Task": t_task,
+            "Description": t_desc,  
+            "Original_Start": t_start,
+            "Original_Finish": t_end,
+            "Duration": t_duration,
+            "Dependency Info": dependency_text
+        }
+        
+    final_tasks = []
+    fecha_hoy_segura = pd.to_datetime(hoy)
+    
+    for t_id, data in calculated_data.items():
+        o_start = data["Original_Start"]
+        o_finish = data["Original_Finish"]
+        
+        if o_start.date() < hoy and o_finish.date() > hoy:
+            final_tasks.append({**data, "Start": o_start, "Finish": fecha_hoy_segura, "Status": "Pasado"})
+            final_tasks.append({**data, "Start": fecha_hoy_segura, "Finish": o_finish, "Status": "Activo"})
+        elif o_finish.date() <= hoy:
+            final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Pasado"})
+        else:
+            final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Activo"})
+            
+    final_df = pd.DataFrame(final_tasks)
+    
+    if not final_df.empty:
+        final_df = final_df.sort_values(by=["Project", "Original_Start"])
+        final_df["Llave_Secreta"] = final_df["Project"].astype(str) + "|||" + final_df["Task"].astype(str)
+        
+        final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
+        final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
+        
+        # === AQUÍ ESTÁ EL CAMBIO: AGREGAMOS EL NOMBRE DEL PROYECTO A LA ETIQUETA ===
+        final_df["Label"] = final_df.apply(
+            lambda x: f"{str(x['Project'])} | {str(x['Orig_Start_str'])} - {str(x['Orig_Finish_str'])}", 
+            axis=1
+        )
+        # ===========================================================================
+        
+        final_df["Color_Visual"] = final_df.apply(
+            lambda row: f"{str(row['Project'])} (Completado)" if row["Status"] == "Pasado" else str(row["Project"]), 
+            axis=1
+        )
+        
+        color_map = {} 
+        pastel_colors = px.colors.qualitative.Pastel
+        color_idx = 0
+        
+        for p in final_df["Project"].unique():
+            if p not in color_map:
+                base_color = pastel_colors[color_idx % len(pastel_colors)]
+                color_map[p] = base_color
+                
+                c_str = str(base_color).strip().lower()
+                try:
+                    if c_str.startswith('#'):
+                        hex_c = c_str.lstrip('#')
+                        r, g, b = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4))
+                    elif c_str.startswith('rgb'):
+                        nums = c_str[c_str.find('(')+1:c_str.find(')')].split(',')
+                        r, g, b = int(nums[0]), int(nums[1]), int(nums[2])
+                    else:
+                        r, g, b = 150, 150, 150
+                        
+                    r_muted = int(r * 0.4 + 210 * 0.6)
+                    g_muted = int(g * 0.4 + 210 * 0.6)
+                    b_muted = int(b * 0.4 + 210 * 0.6)
+                    muted_color = f'rgb({r_muted},{g_muted},{b_muted})'
+                except Exception:
+                    muted_color = "#d3d3d3"
+                
+                color_map[f"{p} (Completado)"] = muted_color
+                color_idx += 1
+    
+    st.write("---") 
+    st.write("### 📊 Resumen del Portafolio")
+    
+    if not final_df.empty:
+        fecha_inicio_global = final_df["Original_Start"].min()
+        fecha_fin_global = final_df["Original_Finish"].max()
+        
+        dias_totales = (fecha_fin_global - fecha_inicio_global).days
+        dias_restantes = max(0, (fecha_fin_global.date() - hoy).days)
+        tareas_unicas = final_df["Task"].nunique()
+        proyectos_activos = final_df[final_df["Original_Finish"].dt.date >= hoy]["Project"].nunique()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("⏳ Duración Total", f"{dias_totales} días")
+        col2.metric("📅 Días Restantes", f"{dias_restantes} días")
+        col3.metric("📝 Total de Tareas", tareas_unicas)
+        col4.metric("📁 Proyectos Activos", proyectos_activos)
+
+    st.write("### 2. Línea de Tiempo de Proyectos")
+    
+    if not final_df.empty:
+        fig = px.timeline(
+            final_df, 
+            x_start="Start", 
+            x_end="Finish", 
+            y="Llave_Secreta", 
+            color="Color_Visual", 
+            color_discrete_map=color_map, 
+            text="Label",     
+            hover_data=["Dependency Info"],
+        )
+        
+        fig.update_traces(
+            textfont_size=13, # <- Le bajé un punto a la letra por si el texto es muy largo
+            textfont_color="black",
+            textposition='inside', 
+            insidetextanchor='middle'
+        )
+        
+        # === 🔧 EL HACK MAESTRO (ACTUALIZADO) 🔧 ===
+        for trace in fig.data:
+            if getattr(trace, "y", None) is not None:
+                proyectos = [str(val).split("|||")[0] for val in trace.y]
+                tareas = [str(val).split("|||")[1] for val in trace.y]
+                trace.y = [proyectos, tareas] 
+                
+        # 1. Configuración del eje Y (Agregamos la línea en los textos)
+        fig.update_yaxes(
+            autorange="reversed", 
+            title_text="",
+            type="multicategory",
+            dividercolor="gray",  
+            dividerwidth=1        
+        )
+        fig.layout.yaxis.categoryarray = None 
+        
+        # 2. Configuración de líneas horizontales dentro de la gráfica
+        unique_llaves = final_df["Llave_Secreta"].unique()
+        proyectos_ordenados = [llave.split("|||")[0] for llave in unique_llaves]
+        
+        for i in range(1, len(proyectos_ordenados)):
+            if proyectos_ordenados[i] != proyectos_ordenados[i-1]:
+                # Trazamos la línea justo en la fracción i-0.5 (en medio de las dos tareas)
+                fig.add_hline(
+                    y=i - 0.5, 
+                    line_width=1.5, 
+                    line_dash="dot", 
+                    line_color="gray", 
+                    opacity=0.6
+                )
+        # ==========================================
+        
+        fig.update_layout(
+            plot_bgcolor='white', 
+            height=max(400, len(final_df['Task'].unique()) * 45),
+            margin=dict(l=150) 
+        ) 
+        
+        fig.update_xaxes(
+            type='date',
+            showgrid=True, 
+            gridcolor='lightgray', 
+            gridwidth=1,
+            tickformat="%b %d, %Y"
+        )
+        
+        hoy_ms = int(pd.Timestamp(hoy).timestamp() * 1000)
+        fecha_texto = hoy.strftime("%d/%m/%Y") 
+        
+        fig.add_vline(
+            x=hoy_ms, 
+            line_width=3, 
+            line_dash="dash", 
+            line_color="darkblue", 
+            annotation_text=f" HOY ({fecha_texto}) ", 
+            annotation_position="top right", 
+            annotation_font_color="darkblue",
+            annotation_font_size=14
+        )
+        
+        st.plotly_chart(fig, width="stretch", use_container_width=True)
+        
+        st.write("---")
+        st.write("### 📋 Detalles del Cronograma")
+        with st.expander("Haz clic aquí para desplegar la tabla con las fechas, descripciones y estados calculados"):
+            table_data = []
+            for t_id, data in calculated_data.items():
+                o_start = data["Original_Start"]
+                o_finish = data["Original_Finish"]
+                
+                if o_finish.date() <= hoy:
+                    status = "Completado ✅"
+                elif o_start.date() > hoy:
+                    status = "Pendiente ⏳"
+                else:
+                    status = "En Proceso 🔵"
+
+                table_data.append({
+                    "ID": t_id,
+                    "Proyecto": data["Project"],
+                    "Tarea": data["Task"],
+                    "Descripción": data["Description"],
+                    "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
+                    "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
+                    "Duración": f"{data['Duration']} días",
+                    "Dependencia": data["Dependency Info"].replace("🔗", "").replace("🟢", "").strip(),
+                    "Estado": status
+                })
+            
+            df_table = pd.DataFrame(table_data)
+            st.dataframe(df_table, use_container_width=True, hide_index=True)
+
+    else:
+        st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
+
+except KeyError as e:
+    st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien. Detalles: {e}")
+except Exception as e:
+    st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
