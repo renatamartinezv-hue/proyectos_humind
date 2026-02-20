@@ -24,7 +24,6 @@ try:
     df = df.dropna(how="all") 
     
     if df.empty:
-        # Actualizamos los datos por defecto para incluir el Nombre del Proyecto
         st.session_state['tasks'] = pd.DataFrame([
             {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Duration (Days)": 2, "Depends On": None, "Start Date": default_start},
             {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
@@ -40,14 +39,14 @@ except Exception as e:
 
 st.write("### 1. Edita el Calendario de Proyectos")
 
-# 3. Editor de Datos (¡Agregamos la nueva columna de Proyecto!)
+# 3. Editor de Datos
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
     width="stretch",
     column_config={
         "Task ID": st.column_config.TextColumn("Task ID", required=True),
-        "Project Name": st.column_config.TextColumn("Project Name", required=True), # Nueva columna
+        "Project Name": st.column_config.TextColumn("Project Name", required=True), 
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
@@ -63,19 +62,16 @@ if st.button("💾 Guardar Cambios en Google Sheets"):
     except Exception as e:
         st.error(f"Error al guardar: {e}")
 
-st.write("### 2. Línea de Tiempo de Proyectos")
-
 calculated_data = {}
 
 try:
     for index, row in edited_df.iterrows():
         t_id = str(row["Task ID"])
-        t_project = row["Project Name"] # Capturamos el proyecto
+        t_project = row["Project Name"] 
         t_pre = row["Depends On"]
         t_duration = int(row["Duration (Days)"])
         t_manual_start = row["Start Date"]
         
-        # Lógica para saber si es independiente para mostrarlo en el gráfico
         if pd.isna(t_pre) or t_pre is None or str(t_pre).strip() == "":
             dependency_text = "Independiente 🟢"
             if pd.notna(t_manual_start):
@@ -98,19 +94,38 @@ try:
             "Task": row["Task Name"],
             "Start": t_start,
             "Finish": t_end,
-            "Dependency Info": dependency_text # Nueva información para la etiqueta interactiva
+            "Dependency Info": dependency_text
         }
         
     final_df = pd.DataFrame(list(calculated_data.values()))
+    
+    # --- NUEVA SECCIÓN DE MÉTRICAS (TARJETAS DE RESUMEN) ---
+    st.write("---") # Una línea divisoria elegante
+    st.write("### 📊 Resumen del Portafolio")
+    
+    if not final_df.empty:
+        # Calculamos la fecha más temprana y la más tardía
+        fecha_inicio_global = final_df["Start"].min()
+        fecha_fin_global = final_df["Finish"].max()
+        dias_totales = (fecha_fin_global - fecha_inicio_global).days
+        
+        # Creamos 3 columnas para las tarjetas
+        col1, col2, col3 = st.columns(3)
+        col1.metric("⏳ Duración Total", f"{dias_totales} días")
+        col2.metric("📝 Total de Tareas", len(final_df))
+        col3.metric("📁 Proyectos Activos", final_df["Project"].nunique())
+    # --------------------------------------------------------
+
+    st.write("### 2. Línea de Tiempo de Proyectos")
     
     # 4. Graficar el Diagrama de Gantt
     fig = px.timeline(
         final_df, 
         x_start="Start", 
         x_end="Finish", 
-        y=["Project", "Task"], # ¡Esto agrupa mágicamente las tareas por Proyecto en el eje Y!
-        color="Project",       # Cada proyecto tendrá un color distinto automáticamente
-        hover_data=["Dependency Info"], # Mostramos si tiene dependencias al pasar el mouse
+        y=["Project", "Task"], 
+        color="Project",       
+        hover_data=["Dependency Info"], 
         color_discrete_sequence=px.colors.qualitative.Pastel
     )
     
