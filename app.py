@@ -135,16 +135,25 @@ try:
             axis=1
         )
         
-        final_df["Color_Visual"] = final_df["Project"].astype(str)
+        # === LÓGICA DE COLORES ROBUSTA ===
+        # Si la fecha de fin ya pasó (es menor a HOY), la marcamos como "Completado (Gris)"
+        # Si no, usamos el nombre del proyecto para darle color.
+        final_df["Color_Visual"] = final_df.apply(
+            lambda row: "Completado (Gris)" if row["Finish"].date() < hoy else str(row["Project"]), 
+            axis=1
+        )
         
-        color_map = {} 
+        # Definimos el color gris explícitamente
+        color_map = {"Completado (Gris)": "#d3d3d3"} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
         
+        # Asignamos colores pastel a los proyectos activos
         for p in final_df["Project"].unique():
             if p not in color_map:
                 color_map[p] = pastel_colors[color_idx % len(pastel_colors)]
                 color_idx += 1
+        # =================================
     
     st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
@@ -167,8 +176,8 @@ try:
             x_start="Start", 
             x_end="Finish", 
             y="Task", 
-            color="Color_Visual", 
-            color_discrete_map=color_map, 
+            color="Color_Visual", # Usamos la columna con la lógica inteligente
+            color_discrete_map=color_map, # Aplicamos el mapa de colores (gris + pasteles)
             text="Label",     
             hover_data=["Project", "Dependency Info"]
         )
@@ -191,16 +200,14 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        # === LÍNEAS SEPARADORAS DE PROYECTOS ===
+        # LÍNEAS SEPARADORAS
         lista_proyectos = final_df['Project'].tolist()
         for i in range(len(lista_proyectos) - 1):
             if lista_proyectos[i] != lista_proyectos[i+1]:
                 fig.add_hline(y=i + 0.5, line_width=2, line_dash="solid", line_color="black", opacity=0.3)
         
-        # === LÍNEA DE "HOY" CON FECHA DINÁMICA (DÍA/MES/AÑO) ===
+        # LÍNEA DE HOY AZUL CON FECHA
         hoy_ms = int(pd.Timestamp(hoy).timestamp() * 1000)
-        
-        # Formateamos la fecha a texto: "día/mes/año"
         fecha_texto = hoy.strftime("%d/%m/%Y") 
         
         fig.add_vline(
@@ -208,12 +215,11 @@ try:
             line_width=3, 
             line_dash="dash", 
             line_color="darkblue", 
-            annotation_text=f" HOY ({fecha_texto}) ",  # <--- SE MOSTRARÁ COMO "HOY (20/02/2026)"
+            annotation_text=f" HOY ({fecha_texto}) ", 
             annotation_position="top right", 
             annotation_font_color="darkblue",
             annotation_font_size=14
         )
-        # ========================================================
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
     else:
