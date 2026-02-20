@@ -64,7 +64,6 @@ calculated_data = {}
 
 try:
     for index, row in edited_df.iterrows():
-        # ¡NUEVA DEFENSA!: Si la fila no tiene ID o Duración, la saltamos para que no colapse
         if pd.isna(row["Task ID"]) or pd.isna(row["Duration (Days)"]):
             continue
             
@@ -82,11 +81,10 @@ try:
                 t_start = default_start
         else:
             dependency_text = f"Depende de: {t_pre} 🔗"
-            # Nos aseguramos de que la tarea previa exista antes de intentar buscarla
             if str(t_pre).strip() in calculated_data:
                 earliest_start = calculated_data[str(t_pre).strip()]["Finish"] 
             else:
-                earliest_start = default_start # Si hay error de escritura, usamos fecha base
+                earliest_start = default_start 
             
             if pd.notna(t_manual_start) and t_manual_start > earliest_start:
                 t_start = t_manual_start
@@ -105,6 +103,10 @@ try:
         
     final_df = pd.DataFrame(list(calculated_data.values()))
     
+    # LA SOLUCIÓN: Ordenamos la tabla por proyecto antes de dibujar para que queden agrupados visualmente
+    if not final_df.empty:
+        final_df = final_df.sort_values(by=["Project", "Start"])
+    
     st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
     
@@ -121,17 +123,19 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
+        # LA SOLUCIÓN: Regresamos a y="Task"
         fig = px.timeline(
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y=["Project", "Task"], 
+            y="Task", # <-- ¡Corregido!
             color="Project",       
             hover_data=["Dependency Info"], 
             color_discrete_sequence=px.colors.qualitative.Pastel
         )
         
-        fig.update_yaxes(autorange="reversed")
+        # Para que el orden Y de Plotly respete cómo ordenamos los proyectos arriba
+        fig.update_yaxes(autorange="reversed", categoryorder='array', categoryarray=final_df['Task'].tolist())
         fig.update_layout(plot_bgcolor='white')
         fig.update_xaxes(
             showgrid=True, 
@@ -144,7 +148,6 @@ try:
     else:
         st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
 
-# Actualizamos el error para que nos dé los detalles técnicos si algo más falla
 except KeyError as e:
     st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien. Detalles: {e}")
 except Exception as e:
