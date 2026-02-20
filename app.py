@@ -197,20 +197,22 @@ try:
             if lista_proyectos[i] != lista_proyectos[i+1]:
                 fig.add_hline(y=i + 0.5, line_width=2, line_dash="solid", line_color="black", opacity=0.3)
         
-        # === EL TRUCO: CONVERTIR FECHA A MILISEGUNDOS ===
+        # === LÍNEA DE "HOY" CON FECHA DINÁMICA ===
         hoy_ms = int(pd.Timestamp(hoy).timestamp() * 1000)
+        # Formateamos la fecha a texto (ej: "2026-02-20")
+        fecha_texto = hoy.strftime("%Y-%m-%d") 
         
         fig.add_vline(
             x=hoy_ms, 
             line_width=3, 
             line_dash="dash", 
             line_color="darkblue", 
-            annotation_text=" HOY ", 
+            annotation_text=f" HOY ({fecha_texto}) ",  # <--- AQUÍ ESTÁ EL CAMBIO
             annotation_position="top right", 
             annotation_font_color="darkblue",
             annotation_font_size=14
         )
-        # ================================================
+        # =========================================
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
     else:
