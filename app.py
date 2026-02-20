@@ -6,7 +6,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
 st.set_page_config(layout="wide")
-st.title("Interactive Multi-Project Gantt Chart")
+st.title("Diagnóstico 25 Empresas")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
@@ -124,7 +124,6 @@ try:
             "Dependency Info": dependency_text
         }
         
-    # === EL TRUCO MÁGICO: PARTIR LAS BARRAS ===
     final_tasks = []
     fecha_hoy_segura = pd.to_datetime(hoy)
     
@@ -143,12 +142,8 @@ try:
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
-        # ES VITAL ORDENAR PRIMERO
         final_df = final_df.sort_values(by=["Project", "Original_Start"])
-        
-        # === ENGAÑAMOS A PLOTLY EXPRESS CON UNA LLAVE ÚNICA TEMPORAL ===
         final_df["Llave_Secreta"] = final_df["Project"].astype(str) + "|||" + final_df["Task"].astype(str)
-        # ==============================================================
         
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
@@ -172,7 +167,6 @@ try:
                 color_map[p] = base_color
                 
                 c_str = str(base_color).strip().lower()
-                
                 try:
                     if c_str.startswith('#'):
                         hex_c = c_str.lstrip('#')
@@ -180,141 +174,4 @@ try:
                     elif c_str.startswith('rgb'):
                         nums = c_str[c_str.find('(')+1:c_str.find(')')].split(',')
                         r, g, b = int(nums[0]), int(nums[1]), int(nums[2])
-                    else:
-                        r, g, b = 150, 150, 150
-                        
-                    r_muted = int(r * 0.4 + 210 * 0.6)
-                    g_muted = int(g * 0.4 + 210 * 0.6)
-                    b_muted = int(b * 0.4 + 210 * 0.6)
-                    muted_color = f'rgb({r_muted},{g_muted},{b_muted})'
-                    
-                except Exception:
-                    muted_color = "#d3d3d3"
-                
-                color_map[f"{p} (Completado)"] = muted_color
-                color_idx += 1
-    
-    st.write("---") 
-    st.write("### 📊 Resumen del Portafolio")
-    
-    if not final_df.empty:
-        fecha_inicio_global = final_df["Original_Start"].min()
-        fecha_fin_global = final_df["Original_Finish"].max()
-        
-        dias_totales = (fecha_fin_global - fecha_inicio_global).days
-        dias_restantes = max(0, (fecha_fin_global.date() - hoy).days)
-        tareas_unicas = final_df["Task"].nunique()
-        proyectos_activos = final_df[final_df["Original_Finish"].dt.date >= hoy]["Project"].nunique()
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("⏳ Duración Total", f"{dias_totales} días")
-        col2.metric("📅 Días Restantes", f"{dias_restantes} días")
-        col3.metric("📝 Total de Tareas", tareas_unicas)
-        col4.metric("📁 Proyectos Activos", proyectos_activos)
-
-    st.write("### 2. Línea de Tiempo de Proyectos")
-    
-    if not final_df.empty:
-        # Generamos el gráfico base con Plotly Express
-        fig = px.timeline(
-            final_df, 
-            x_start="Start", 
-            x_end="Finish", 
-            y="Llave_Secreta", # Pasamos la llave temporal
-            color="Color_Visual", 
-            color_discrete_map=color_map, 
-            text="Label",     
-            hover_data=["Dependency Info"],
-        )
-        
-        fig.update_traces(
-            textfont_size=14, 
-            textfont_color="black",
-            textposition='inside', 
-            insidetextanchor='middle'
-        )
-        
-        # === 🔧 EL HACK MAESTRO: MODIFICAMOS LAS TRIPAS DEL GRÁFICO 🔧 ===
-        # Iteramos por cada barra dibujada y reemplazamos la "Llave" por la jerarquía
-        for trace in fig.data:
-            if getattr(trace, "y", None) is not None:
-                proyectos = [str(val).split("|||")[0] for val in trace.y]
-                tareas = [str(val).split("|||")[1] for val in trace.y]
-                trace.y = [proyectos, tareas] # Convertimos a jerarquía nativa de Plotly
-                
-        # Forzamos al layout a interpretar el nuevo eje como multicategoría
-        fig.update_yaxes(
-            autorange="reversed", 
-            title_text="",
-            type="multicategory" 
-        )
-        fig.layout.yaxis.categoryarray = None # Limpiamos cualquier rastro de la llave
-        # ================================================================
-        
-        fig.update_layout(
-            plot_bgcolor='white', 
-            height=max(400, len(final_df['Task'].unique()) * 45),
-            margin=dict(l=150) 
-        ) 
-        
-        fig.update_xaxes(
-            type='date',
-            showgrid=True, 
-            gridcolor='lightgray', 
-            gridwidth=1,
-            tickformat="%b %d, %Y"
-        )
-        
-        hoy_ms = int(pd.Timestamp(hoy).timestamp() * 1000)
-        fecha_texto = hoy.strftime("%d/%m/%Y") 
-        
-        fig.add_vline(
-            x=hoy_ms, 
-            line_width=3, 
-            line_dash="dash", 
-            line_color="darkblue", 
-            annotation_text=f" HOY ({fecha_texto}) ", 
-            annotation_position="top right", 
-            annotation_font_color="darkblue",
-            annotation_font_size=14
-        )
-        
-        st.plotly_chart(fig, width="stretch", use_container_width=True)
-        
-        st.write("---")
-        st.write("### 📋 Detalles del Cronograma")
-        with st.expander("Haz clic aquí para desplegar la tabla con las fechas, descripciones y estados calculados"):
-            table_data = []
-            for t_id, data in calculated_data.items():
-                o_start = data["Original_Start"]
-                o_finish = data["Original_Finish"]
-                
-                if o_finish.date() <= hoy:
-                    status = "Completado ✅"
-                elif o_start.date() > hoy:
-                    status = "Pendiente ⏳"
-                else:
-                    status = "En Proceso 🔵"
-
-                table_data.append({
-                    "ID": t_id,
-                    "Proyecto": data["Project"],
-                    "Tarea": data["Task"],
-                    "Descripción": data["Description"],
-                    "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
-                    "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
-                    "Duración": f"{data['Duration']} días",
-                    "Dependencia": data["Dependency Info"].replace("🔗", "").replace("🟢", "").strip(),
-                    "Estado": status
-                })
-            
-            df_table = pd.DataFrame(table_data)
-            st.dataframe(df_table, use_container_width=True, hide_index=True)
-
-    else:
-        st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
-
-except KeyError as e:
-    st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien. Detalles: {e}")
-except Exception as e:
-    st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
+                    else
