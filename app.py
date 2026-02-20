@@ -80,7 +80,6 @@ try:
         except (ValueError, TypeError):
             t_duration = 1
             
-        # Nos aseguramos de que el inicio manual sea una fecha real o None
         t_manual_start = pd.to_datetime(row["Start Date"]).date() if pd.notna(row["Start Date"]) else None
         
         if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
@@ -89,77 +88,6 @@ try:
         else:
             dependency_text = f"Depende de: {t_pre} 🔗"
             if t_pre in calculated_data:
-                # Extraemos la fecha garantizando que sea Date
                 earliest_start = pd.to_datetime(calculated_data[t_pre]["Finish"]).date()
             else:
-                earliest_start = default_start 
-            
-            if t_manual_start and t_manual_start > earliest_start:
-                t_start = t_manual_start
-            else:
-                t_start = earliest_start
-            
-        t_end = t_start + timedelta(days=t_duration)
-        
-        calculated_data[t_id] = {
-            "Project": t_project,
-            "Task": t_task,
-            "Start": t_start,
-            "Finish": t_end,
-            "Dependency Info": dependency_text
-        }
-        
-    final_df = pd.DataFrame(list(calculated_data.values()))
-    
-    if not final_df.empty:
-        # === AQUÍ ESTÁ LA SOLUCIÓN DEFINITIVA A TU DIAGNÓSTICO ===
-        # Obligamos a que las columnas sean DATETIME nativo de Pandas antes de pasarlas a Plotly
-        final_df["Start"] = pd.to_datetime(final_df["Start"])
-        final_df["Finish"] = pd.to_datetime(final_df["Finish"])
-        
-        final_df = final_df.sort_values(by=["Project", "Start"])
-        
-        final_df["Start_str"] = final_df["Start"].dt.strftime('%d %b')
-        final_df["Finish_str"] = final_df["Finish"].dt.strftime('%d %b')
-        
-        final_df["Label"] = final_df.apply(
-            lambda x: f"{str(x['Task'])} ({str(x['Start_str'])} - {str(x['Finish_str'])})", 
-            axis=1
-        )
-        
-        # Como "Finish" ya es estrictamente Datetime, la lógica de Completado (Gris) es 100% segura
-        final_df["Color_Visual"] = final_df.apply(
-            lambda row: "Completado (Gris)" if row["Finish"].date() < hoy else str(row["Project"]), 
-            axis=1
-        )
-        
-        color_map = {"Completado (Gris)": "#d3d3d3"} 
-        pastel_colors = px.colors.qualitative.Pastel
-        color_idx = 0
-        
-        for p in final_df["Project"].unique():
-            if p not in color_map:
-                color_map[p] = pastel_colors[color_idx % len(pastel_colors)]
-                color_idx += 1
-    
-    st.write("---") 
-    st.write("### 📊 Resumen del Portafolio")
-    
-    if not final_df.empty:
-        fecha_inicio_global = final_df["Start"].min()
-        fecha_fin_global = final_df["Finish"].max()
-        dias_totales = (fecha_fin_global - fecha_inicio_global).days
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("⏳ Duración Total", f"{dias_totales} días")
-        col2.metric("📝 Total de Tareas", len(final_df))
-        col3.metric("📁 Proyectos Activos", final_df["Project"].nunique())
-
-    st.write("### 2. Línea de Tiempo de Proyectos")
-    
-    if not final_df.empty:
-        fig = px.timeline(
-            final_df, 
-            x_start="Start", 
-            x_end="Finish", 
-            y="Task",
+                earliest
