@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
@@ -15,7 +15,8 @@ TAB_NAME = "Sheet1"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 hoy = datetime.today().date()
-default_start = hoy 
+# Todo nace como Timestamp nativo de Pandas para evitar choques
+default_start = pd.to_datetime(hoy)
 
 # 2. Lógica de Base de Datos
 try:
@@ -24,12 +25,11 @@ try:
     
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
-            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Duration (Days)": 2, "Depends On": None, "Start Date": default_start},
+            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
             {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
-            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Duration (Days)": 4, "Depends On": None, "Start Date": default_start},
+            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
         ])
     else:
-        df["Start Date"] = pd.to_datetime(df["Start Date"], errors='coerce').dt.date
         st.session_state['tasks'] = df
 
 except Exception as e:
@@ -80,24 +80,26 @@ try:
         except (ValueError, TypeError):
             t_duration = 1
             
-        t_manual_start = pd.to_datetime(row["Start Date"]).date() if pd.notna(row["Start Date"]) else None
+        # Nos aseguramos de que todo se vuelva Timestamp nativo
+        t_manual_start = pd.to_datetime(row["Start Date"]) if pd.notna(row["Start Date"]) else None
         
         if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
             dependency_text = "Independiente 🟢"
-            t_start = t_manual_start if t_manual_start else default_start
+            t_start = t_manual_start if t_manual_start is not None else default_start
         else:
             dependency_text = f"Depende de: {t_pre} 🔗"
             if t_pre in calculated_data:
-                earliest_start = pd.to_datetime(calculated_data[t_pre]["Finish"]).date()
+                earliest_start = calculated_data[t_pre]["Finish"]
             else:
                 earliest_start = default_start 
             
-            if t_manual_start and t_manual_start > earliest_start:
+            if t_manual_start is not None and t_manual_start > earliest_start:
                 t_start = t_manual_start
             else:
                 t_start = earliest_start
             
-        t_end = t_start + timedelta(days=t_duration)
+        # Suma matemática 100% segura usando Timedelta de Pandas
+        t_end = t_start + pd.Timedelta(days=t_duration)
         
         calculated_data[t_id] = {
             "Project": t_project,
@@ -110,9 +112,6 @@ try:
     final_df = pd.DataFrame(list(calculated_data.values()))
     
     if not final_df.empty:
-        final_df["Start"] = pd.to_datetime(final_df["Start"])
-        final_df["Finish"] = pd.to_datetime(final_df["Finish"])
-        
         final_df = final_df.sort_values(by=["Project", "Start"])
         
         final_df["Start_str"] = final_df["Start"].dt.strftime('%d %b')
@@ -123,6 +122,7 @@ try:
             axis=1
         )
         
+        # Validamos usando la función .date() contra nuestro hoy original
         final_df["Color_Visual"] = final_df.apply(
             lambda row: "Completado (Gris)" if row["Finish"].date() < hoy else str(row["Project"]), 
             axis=1
@@ -182,10 +182,9 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        fecha_hoy_segura = pd.to_datetime(hoy)
-        
+        # === EL TRUCO: Pasamos la fecha como Texto String ("YYYY-MM-DD") para que Plotly no haga matemáticas ===
         fig.add_vline(
-            x=fecha_hoy_segura, 
+            x=hoy.strftime("%Y-%m-%d"), 
             line_width=3, 
             line_dash="dash", 
             line_color="red", 
