@@ -191,15 +191,23 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        # === AQUÍ AGREGAMOS LAS LÍNEAS SEPARADORAS DE PROYECTOS ===
-        # Obtenemos la lista ordenada de proyectos
+        # === AQUÍ ESTÁN LAS LÍNEAS SEPARADORAS DE PROYECTOS ===
         lista_proyectos = final_df['Project'].tolist()
-        
-        # Recorremos la lista para encontrar dónde cambia el nombre del proyecto
         for i in range(len(lista_proyectos) - 1):
             if lista_proyectos[i] != lista_proyectos[i+1]:
-                # i + 0.5 ubica la línea exactamente en medio de las dos tareas
                 fig.add_hline(y=i + 0.5, line_width=2, line_dash="solid", line_color="black", opacity=0.3)
+        
+        # === NUEVA LÍNEA DE "HOY" EN AZUL FUERTE ===
+        fig.add_vline(
+            x=hoy.strftime("%Y-%m-%d"), # Lo pasamos como texto seguro "YYYY-MM-DD"
+            line_width=3, 
+            line_dash="dash", 
+            line_color="darkblue", # Azul fuerte
+            annotation_text=" HOY ", 
+            annotation_position="top right", 
+            annotation_font_color="darkblue",
+            annotation_font_size=14
+        )
         # ==========================================================
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
