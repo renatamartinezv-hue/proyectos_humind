@@ -145,6 +145,10 @@ try:
     if not final_df.empty:
         final_df = final_df.sort_values(by=["Project", "Original_Start"])
         
+        # === SOLUCIÓN: CREAMOS UNA COLUMNA JERÁRQUICA LIMPIA ===
+        final_df["Jerarquia"] = final_df["Project"] + " ❯ " + final_df["Task"]
+        # =======================================================
+        
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         final_df["Label"] = final_df.apply(
@@ -210,17 +214,15 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
-        # === MAGIA AQUÍ: AGRUPACIÓN EN EL EJE Y ===
         fig = px.timeline(
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y=["Project", "Task"], # Le pasamos una lista para que cree la jerarquía visual
+            y="Jerarquia", # <--- Usamos nuestra nueva columna estable
             color="Color_Visual", 
             color_discrete_map=color_map, 
             text="Label",     
-            hover_data=["Dependency Info"],
-            labels={"Project": "Proyecto", "Task": "Tarea"}
+            hover_data=["Project", "Dependency Info"],
         )
         
         fig.update_traces(
@@ -230,14 +232,18 @@ try:
             insidetextanchor='middle'
         )
         
-        # autorange="reversed" pone la primera tarea arriba
-        # title_text="" ELIMINA la molesta leyenda genérica del eje Y
-        fig.update_yaxes(autorange="reversed", title_text="") 
+        # Ocultamos el título del eje Y para que se vea limpio
+        fig.update_yaxes(
+            autorange="reversed", 
+            title_text="", 
+            categoryorder='array', 
+            categoryarray=final_df['Jerarquia'].tolist()
+        ) 
         
         fig.update_layout(
             plot_bgcolor='white', 
             height=max(400, len(final_df['Task'].unique()) * 45),
-            margin=dict(l=150) # Damos un poco de espacio extra a la izquierda para los nombres largos de proyectos
+            margin=dict(l=150) 
         ) 
         
         fig.update_xaxes(
@@ -264,7 +270,6 @@ try:
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
         
-        # === TABLA DESPLEGABLE CON LA NUEVA COLUMNA DE DESCRIPCIÓN ===
         st.write("---")
         st.write("### 📋 Detalles del Cronograma")
         with st.expander("Haz clic aquí para desplegar la tabla con las fechas, descripciones y estados calculados"):
@@ -294,7 +299,6 @@ try:
             
             df_table = pd.DataFrame(table_data)
             st.dataframe(df_table, use_container_width=True, hide_index=True)
-        # ======================================================
 
     else:
         st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
