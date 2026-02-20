@@ -24,15 +24,18 @@ try:
     
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
-            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Description": "Reunión inicial de planeación", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
-            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Description": "Análisis de la competencia", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
-            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Description": "Bocetos y diseño conceptual", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
+            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Description": "Reunión inicial de planeación", "Color": "#FF5733", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
+            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Description": "Análisis de la competencia", "Color": "blue", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
+            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Description": "Bocetos y conceptualización", "Color": "", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
         ])
     else:
+        # Asegurar que existan las nuevas columnas
         if "Description" not in df.columns:
             df["Description"] = ""
+        if "Color" not in df.columns:
+            df["Color"] = ""
             
-        for col in ["Task ID", "Project Name", "Task Name", "Description", "Depends On"]:
+        for col in ["Task ID", "Project Name", "Task Name", "Description", "Color", "Depends On"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], None)
                 
@@ -50,7 +53,7 @@ except Exception as e:
 
 st.write("### 1. Edita el Calendario de Proyectos")
 
-# 3. Editor de Datos
+# 3. Editor de Datos (¡Ahora con Selector de Color!)
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
@@ -60,6 +63,7 @@ edited_df = st.data_editor(
         "Project Name": st.column_config.TextColumn("Project Name", required=True), 
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
         "Description": st.column_config.TextColumn("Description"), 
+        "Color": st.column_config.TextColumn("Color (Hex o Nombre)", help="Ej. #FF5733, blue, green, red. Déjalo en blanco para usar el color por defecto."),
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
         "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
@@ -77,7 +81,7 @@ if st.button("💾 Guardar Cambios en Google Sheets"):
 calculated_data = {}
 
 try:
-    # 4. Cálculo Matemático de Fechas Generales
+    # 4. Cálculo Matemático
     for index, row in edited_df.iterrows():
         if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() in ["None", ""]:
             continue
@@ -88,6 +92,9 @@ try:
         
         t_desc_raw = row.get("Description", "")
         t_desc = str(t_desc_raw).strip() if pd.notna(t_desc_raw) and str(t_desc_raw) != "None" else ""
+        
+        t_color_raw = row.get("Color", "")
+        t_color = str(t_color_raw).strip() if pd.notna(t_color_raw) and str(t_color_raw) != "None" else ""
         
         t_pre_raw = row["Depends On"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) != "None" else ""
@@ -115,9 +122,11 @@ try:
         t_end = t_start + pd.Timedelta(days=t_duration)
         
         calculated_data[t_id] = {
+            "Task ID": t_id,
             "Project": t_project,
             "Task": t_task,
             "Description": t_desc,  
+            "Color_Raw": t_color, # Guardamos el color que el usuario escribió
             "Original_Start": t_start,
             "Original_Finish": t_end,
             "Duration": t_duration,
@@ -148,31 +157,50 @@ try:
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
-        # === AQUÍ ESTÁ EL CAMBIO: AHORA LLAMAMOS AL NOMBRE DE LA TAREA / EVENTO ===
         final_df["Label"] = final_df.apply(
             lambda x: f"{str(x['Task'])} | {str(x['Orig_Start_str'])} - {str(x['Orig_Finish_str'])}", 
             axis=1
         )
-        # ===========================================================================
         
-        final_df["Color_Visual"] = final_df.apply(
-            lambda row: f"{str(row['Project'])} (Completado)" if row["Status"] == "Pasado" else str(row["Project"]), 
+        # Asignamos una llave única para el color basada en la Tarea
+        final_df["Color_Key"] = final_df.apply(
+            lambda row: f"{row['Task ID']} (Completado)" if row["Status"] == "Pasado" else row["Task ID"], 
             axis=1
         )
         
+        # === GENERADOR DE COLORES INDIVIDUALIZADOS ===
         color_map = {} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
         
+        # Primero aseguramos los colores pastel de fondo para los Proyectos
+        project_default_colors = {}
         for p in final_df["Project"].unique():
-            if p not in color_map:
-                base_color = pastel_colors[color_idx % len(pastel_colors)]
-                color_map[p] = base_color
+            project_default_colors[p] = pastel_colors[color_idx % len(pastel_colors)]
+            color_idx += 1
+            
+        for index, row in final_df.iterrows():
+            tid = row["Task ID"]
+            active_key = tid
+            past_key = f"{tid} (Completado)"
+            
+            if active_key not in color_map:
+                user_color = str(row.get("Color_Raw", "")).strip()
                 
+                # Si escribió un color, lo usamos. Si no, usamos el del Proyecto.
+                if user_color and user_color.lower() not in ["none", "nan", ""]:
+                    base_color = user_color
+                else:
+                    base_color = project_default_colors.get(row["Project"], "#3366cc")
+                    
+                color_map[active_key] = base_color
+                
+                # Apagamos el color automáticamente para las tareas pasadas
                 c_str = str(base_color).strip().lower()
                 try:
                     if c_str.startswith('#'):
                         hex_c = c_str.lstrip('#')
+                        if len(hex_c) == 3: hex_c = "".join([c*2 for c in hex_c])
                         r, g, b = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4))
                     elif c_str.startswith('rgb'):
                         nums = c_str[c_str.find('(')+1:c_str.find(')')].split(',')
@@ -187,8 +215,8 @@ try:
                 except Exception:
                     muted_color = "#d3d3d3"
                 
-                color_map[f"{p} (Completado)"] = muted_color
-                color_idx += 1
+                color_map[past_key] = muted_color
+        # ===============================================
     
     st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
@@ -216,10 +244,16 @@ try:
             x_start="Start", 
             x_end="Finish", 
             y="Llave_Secreta", 
-            color="Color_Visual", 
+            color="Color_Key", # Ahora colorea por Tarea
             color_discrete_map=color_map, 
             text="Label",     
-            hover_data=["Dependency Info"],
+            # Ocultamos la llave del color del popup (hover) para que se vea profesional
+            hover_data={
+                "Color_Key": False,
+                "Llave_Secreta": False,
+                "Project": True,
+                "Dependency Info": True
+            },
         )
         
         fig.update_traces(
@@ -229,14 +263,13 @@ try:
             insidetextanchor='middle'
         )
         
-        # === 🔧 EL HACK MAESTRO (ACTUALIZADO) 🔧 ===
+        # === 🔧 EL HACK MAESTRO 🔧 ===
         for trace in fig.data:
             if getattr(trace, "y", None) is not None:
                 proyectos = [str(val).split("|||")[0] for val in trace.y]
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
-        # 1. Configuración del eje Y (Agregamos la línea en los textos)
         fig.update_yaxes(
             autorange="reversed", 
             title_text="",
@@ -246,13 +279,11 @@ try:
         )
         fig.layout.yaxis.categoryarray = None 
         
-        # 2. Configuración de líneas horizontales dentro de la gráfica
         unique_llaves = final_df["Llave_Secreta"].unique()
         proyectos_ordenados = [llave.split("|||")[0] for llave in unique_llaves]
         
         for i in range(1, len(proyectos_ordenados)):
             if proyectos_ordenados[i] != proyectos_ordenados[i-1]:
-                # Trazamos la línea justo en la fracción i-0.5 (en medio de las dos tareas)
                 fig.add_hline(
                     y=i - 0.5, 
                     line_width=1.5, 
@@ -260,12 +291,13 @@ try:
                     line_color="gray", 
                     opacity=0.6
                 )
-        # ==========================================
         
+        # Ocultamos la leyenda al lado del gráfico (para no llenarnos de cuadritos de T1, T2...)
         fig.update_layout(
             plot_bgcolor='white', 
             height=max(400, len(final_df['Task'].unique()) * 45),
-            margin=dict(l=150) 
+            margin=dict(l=150),
+            showlegend=False # <--- OCULTA LEYENDA (Se ve mucho más limpio)
         ) 
         
         fig.update_xaxes(
