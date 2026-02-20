@@ -29,17 +29,14 @@ try:
             {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
         ])
     else:
-        # === LIMPIEZA ESTRICTA DE TIPOS DE DATOS ===
-        # 1. Asegurar textos limpios
+        # Limpieza estricta
         for col in ["Task ID", "Project Name", "Task Name", "Depends On"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], None)
                 
-        # 2. Forzar que la duración sea Número Entero
         if "Duration (Days)" in df.columns:
             df["Duration (Days)"] = pd.to_numeric(df["Duration (Days)"], errors='coerce').fillna(1).astype(int)
             
-        # 3. Forzar que las fechas sean objetos Date reales
         if "Start Date" in df.columns:
             df["Start Date"] = pd.to_datetime(df["Start Date"], errors='coerce').dt.date
             
@@ -78,7 +75,8 @@ calculated_data = {}
 
 try:
     for index, row in edited_df.iterrows():
-        if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() == "None":
+        # Ignorar filas vacías
+        if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() == "None" or str(row["Task ID"]).strip() == "":
             continue
             
         t_id = str(row["Task ID"]).strip()
@@ -93,7 +91,10 @@ try:
         except (ValueError, TypeError):
             t_duration = 1
             
-        t_manual_start = pd.to_datetime(row["Start Date"]) if pd.notna(row["Start Date"]) else None
+        if pd.notna(row["Start Date"]) and row["Start Date"] != "":
+            t_manual_start = pd.to_datetime(row["Start Date"])
+        else:
+            t_manual_start = None
         
         if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
             dependency_text = "Independiente 🟢"
@@ -109,7 +110,9 @@ try:
                 t_start = t_manual_start
             else:
                 t_start = earliest_start
-            
+        
+        # FORZAMOS a que t_start sea un tiempo real antes de sumar días para evitar el error int/str
+        t_start = pd.to_datetime(t_start)
         t_end = t_start + pd.Timedelta(days=t_duration)
         
         calculated_data[t_id] = {
@@ -133,12 +136,10 @@ try:
             axis=1
         )
         
-        final_df["Color_Visual"] = final_df.apply(
-            lambda row: "Completado (Gris)" if row["Finish"].date() < hoy else str(row["Project"]), 
-            axis=1
-        )
+        # SIMPLIFICADO: Los colores solo dependen del nombre del proyecto
+        final_df["Color_Visual"] = final_df["Project"].astype(str)
         
-        color_map = {"Completado (Gris)": "#d3d3d3"} 
+        color_map = {} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
         
@@ -192,16 +193,7 @@ try:
             tickformat="%b %d, %Y"
         )
         
-        fig.add_vline(
-            x=hoy.strftime("%Y-%m-%d"), 
-            line_width=3, 
-            line_dash="dash", 
-            line_color="red", 
-            annotation_text=" HOY ", 
-            annotation_position="top right", 
-            annotation_font_color="red",
-            annotation_font_size=14
-        )
+        # ELIMINAMOS LA LÍNEA ROJA AQUÍ
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
     else:
