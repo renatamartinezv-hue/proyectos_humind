@@ -40,20 +40,29 @@ try:
     
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
-            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Description": "Reunión inicial", "Color": "Rojo", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy},
-            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Description": "Análisis", "Color": "Azul", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None},
-            {"Task ID": "T3", "Project Name": "Proyecto 2", "Task Name": "Design Phase", "Description": "Bocetos", "Color": "Por defecto", "Duration (Days)": 4, "Depends On": None, "Start Date": hoy},
+            {"Task ID": "T1", "Project Name": "Proyecto 1", "Task Name": "Project Kickoff", "Description": "Reunión inicial", "Color": "Rojo", "Duration (Days)": 2, "Depends On": None, "Start Date": hoy, "Notas Extra": "", "Ocultar en Gráfica": False},
+            {"Task ID": "T2", "Project Name": "Proyecto 1", "Task Name": "Market Research", "Description": "Análisis", "Color": "Azul", "Duration (Days)": 5, "Depends On": "T1", "Start Date": None, "Notas Extra": "", "Ocultar en Gráfica": False},
+            {"Task ID": "T3", "Project Name": "Personal", "Task Name": "Comprar Café", "Description": "Para la oficina", "Color": "Por defecto", "Duration (Days)": 1, "Depends On": None, "Start Date": hoy, "Notas Extra": "Importante", "Ocultar en Gráfica": True},
         ])
     else:
-        if "Description" not in df.columns:
-            df["Description"] = ""
-            
+        # Aseguramos que existan las nuevas columnas para evitar errores
+        if "Description" not in df.columns: df["Description"] = ""
+        if "Notas Extra" not in df.columns: df["Notas Extra"] = ""
+        
         if "Color" not in df.columns:
             df["Color"] = "Por defecto"
         else:
             df["Color"] = df["Color"].apply(lambda x: x if x in opciones_color else "Por defecto")
             
-        for col in ["Task ID", "Project Name", "Task Name", "Description", "Depends On"]:
+        # Convertimos la columna de Ocultar a Booleano (True/False) de forma segura
+        if "Ocultar en Gráfica" not in df.columns:
+            df["Ocultar en Gráfica"] = False
+        else:
+            df["Ocultar en Gráfica"] = df["Ocultar en Gráfica"].map(
+                lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes', 'v', 'verdadero']
+            ).astype(bool)
+            
+        for col in ["Task ID", "Project Name", "Task Name", "Description", "Notas Extra", "Depends On"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], None)
                 
@@ -70,8 +79,9 @@ except Exception as e:
     st.stop()
 
 st.write("### 1. Edita el Calendario de Proyectos")
+st.info("💡 **Tip de Productividad:** Usa la tabla de aquí abajo para agregar tareas personales o apuntes. Si marcas la casilla **'👻 Ocultar en Gráfica'**, no aparecerá en el dibujo, pero sí se guardará en tu Excel descargable.")
 
-# 3. Editor de Datos PRINCIPAL (El que sí guarda en la nube)
+# 3. Editor de Datos PRINCIPAL
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
@@ -81,11 +91,16 @@ edited_df = st.data_editor(
         "Project Name": st.column_config.TextColumn("Project Name", required=True), 
         "Task Name": st.column_config.TextColumn("Task Name", required=True),
         "Description": st.column_config.TextColumn("Description"), 
+        "Notas Extra": st.column_config.TextColumn("📝 Notas Extra", help="Anota encargados, presupuestos o links."), 
         "Color": st.column_config.SelectboxColumn(
             "Color de Tarea", 
             options=opciones_color,
             default="Por defecto",
             required=True
+        ),
+        "Ocultar en Gráfica": st.column_config.CheckboxColumn(
+            "👻 Ocultar en Gráfica", 
+            help="Marca esta casilla para esconder la tarea del Gantt visual."
         ),
         "Duration (Days)": st.column_config.NumberColumn("Duration (Days)", min_value=1, step=1, required=True),
         "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
@@ -104,7 +119,7 @@ if st.button("💾 Guardar Cambios en Google Sheets"):
 calculated_data = {}
 
 try:
-    # 4. Cálculo Matemático
+    # 4. Cálculo Matemático de TODAS las tareas (Visibles y Ocultas)
     for index, row in edited_df.iterrows():
         if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() in ["None", ""]:
             continue
@@ -112,9 +127,13 @@ try:
         t_id = str(row["Task ID"]).strip()
         t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
         t_task = str(row["Task Name"]).strip()
-        t_desc_raw = row.get("Description", "")
-        t_desc = str(t_desc_raw).strip() if pd.notna(t_desc_raw) and str(t_desc_raw) != "None" else ""
+        t_desc = str(row.get("Description", "")).strip() if pd.notna(row.get("Description")) else ""
+        t_notas = str(row.get("Notas Extra", "")).strip() if pd.notna(row.get("Notas Extra")) else ""
         t_color_raw = str(row.get("Color", "Por defecto")).strip()
+        
+        # Recuperamos la variable booleana
+        t_ocultar = bool(row.get("Ocultar en Gráfica", False))
+        
         t_pre_raw = row["Depends On"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) != "None" else ""
         
@@ -145,6 +164,8 @@ try:
             "Project": t_project,
             "Task": t_task,
             "Description": t_desc,  
+            "Notas Extra": t_notas,
+            "Ocultar en Gráfica": t_ocultar,
             "Color_Raw": t_color_raw, 
             "Original_Start": t_start,
             "Original_Finish": t_end,
@@ -230,17 +251,24 @@ try:
                 
                 color_map[past_key] = muted_color
     
-    st.write("---") 
-    st.write("### 📊 Resumen del Portafolio")
-    
+    # === SEPARAMOS LOS DATOS: SOLO TAREAS VISIBLES PARA EL GRÁFICO ===
     if not final_df.empty:
-        fecha_inicio_global = final_df["Original_Start"].min()
-        fecha_fin_global = final_df["Original_Finish"].max()
+        df_grafico = final_df[final_df["Ocultar en Gráfica"] == False].copy()
+    else:
+        df_grafico = pd.DataFrame()
+    # =================================================================
+    
+    st.write("---") 
+    st.write("### 📊 Resumen del Portafolio (Proyectos Visibles)")
+    
+    if not df_grafico.empty:
+        fecha_inicio_global = df_grafico["Original_Start"].min()
+        fecha_fin_global = df_grafico["Original_Finish"].max()
         
         dias_totales = (fecha_fin_global - fecha_inicio_global).days
         dias_restantes = max(0, (fecha_fin_global.date() - hoy).days)
-        tareas_unicas = final_df["Task"].nunique()
-        proyectos_activos = final_df[final_df["Original_Finish"].dt.date >= hoy]["Project"].nunique()
+        tareas_unicas = df_grafico["Task"].nunique()
+        proyectos_activos = df_grafico[df_grafico["Original_Finish"].dt.date >= hoy]["Project"].nunique()
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("⏳ Duración Total", f"{dias_totales} días")
@@ -250,9 +278,9 @@ try:
 
     st.write("### 2. Línea de Tiempo de Proyectos")
     
-    if not final_df.empty:
+    if not df_grafico.empty:
         fig = px.timeline(
-            final_df, 
+            df_grafico, 
             x_start="Start", 
             x_end="Finish", 
             y="Llave_Secreta", 
@@ -280,12 +308,13 @@ try:
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
+        # Milestones solo para tareas visibles
         hitos_x = []
         hitos_y_proy = []
         hitos_y_tarea = []
         
         fechas_fin_proy = {}
-        for idx, row in final_df.iterrows():
+        for idx, row in df_grafico.iterrows():
             p = row["Project"]
             f = row["Original_Finish"]
             t = row["Task"]
@@ -304,7 +333,7 @@ try:
             marker=dict(symbol='diamond', size=16, color='#D30000', line=dict(color='black', width=1.5)),
             text=["Fin"] * len(hitos_x),
             textposition="middle right",
-            textfont=dict(color="black", size=9, family="Arial Light"),
+            textfont=dict(color="black", size=10, family="Arial"),
             hoverinfo='skip',
             showlegend=False
         ))
@@ -318,7 +347,7 @@ try:
         )
         fig.layout.yaxis.categoryarray = None 
         
-        unique_llaves = final_df["Llave_Secreta"].unique()
+        unique_llaves = df_grafico["Llave_Secreta"].unique()
         proyectos_ordenados = [llave.split("|||")[0] for llave in unique_llaves]
         
         for i in range(1, len(proyectos_ordenados)):
@@ -333,7 +362,7 @@ try:
         
         fig.update_layout(
             plot_bgcolor='white', 
-            height=max(400, len(final_df['Task'].unique()) * 45),
+            height=max(400, len(df_grafico['Task'].unique()) * 45),
             margin=dict(l=150, r=50),
             showlegend=False 
         ) 
@@ -361,56 +390,58 @@ try:
         )
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
-        
-        st.write("---")
-        # === AQUÍ ESTÁ EL CAMBIO PARA LOS DETALLES DEL CRONOGRAMA ===
-        st.write("### 📋 Detalles del Cronograma (Resultados Calculados)")
-        with st.expander("Haz clic aquí para desplegar la tabla de resultados"):
-            
-            st.info("💡 **Nota:** Esta tabla te muestra el **resultado** de tu cronograma. La hemos desbloqueado para que la edites libremente si quieres descargar un reporte limpio, pero recuerda que **para alterar el gráfico y guardar en Google Sheets, debes editar la primera tabla de arriba**.")
-            
-            table_data = []
-            for t_id, data in calculated_data.items():
-                o_start = data["Original_Start"]
-                o_finish = data["Original_Finish"]
-                
-                if o_finish.date() <= hoy:
-                    status = "Completado ✅"
-                elif o_start.date() > hoy:
-                    status = "Pendiente ⏳"
-                else:
-                    status = "En Proceso 🔵"
-
-                table_data.append({
-                    "ID": t_id,
-                    "Proyecto": data["Project"],
-                    "Tarea": data["Task"],
-                    "Color": data["Color_Raw"],
-                    "Descripción": data["Description"],
-                    "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
-                    "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
-                    "Duración": f"{data['Duration']} días",
-                    "Dependencia": data["Dependency Info"].replace("🔗", "").replace("🟢", "").strip(),
-                    "Estado": status
-                })
-            
-            df_table = pd.DataFrame(table_data)
-            
-            # Reemplazamos st.dataframe por st.data_editor
-            edited_bottom_table = st.data_editor(df_table, use_container_width=True, hide_index=True)
-            
-            # Botón para descargar el resultado en CSV (Compatible con Excel)
-            csv = edited_bottom_table.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Descargar Tabla (CSV)",
-                data=csv,
-                file_name='reporte_cronograma.csv',
-                mime='text/csv',
-            )
-        # ==========================================================
-
+    elif not final_df.empty:
+        st.info("Todas las tareas actuales están marcadas como 'Ocultas'. Desmarca alguna arriba para ver la gráfica.")
     else:
-        st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
+        st.info("No hay tareas válidas para mostrar en el gráfico.")
+
+    st.write("---")
+    
+    # === TABLA DE REPORTES (Muestra todo) ===
+    st.write("### 📋 Reporte Final Descargable")
+    with st.expander("Haz clic aquí para ver y descargar todas las tareas (Visibles y Ocultas)", expanded=True):
+        
+        table_data = []
+        for t_id, data in calculated_data.items():
+            o_start = data["Original_Start"]
+            o_finish = data["Original_Finish"]
+            
+            if o_finish.date() <= hoy:
+                status = "Completado ✅"
+            elif o_start.date() > hoy:
+                status = "Pendiente ⏳"
+            else:
+                status = "En Proceso 🔵"
+                
+            visibilidad = "Oculta 👻" if data["Ocultar en Gráfica"] else "Visible 👁️"
+
+            table_data.append({
+                "ID": t_id,
+                "Proyecto": data["Project"],
+                "Tarea": data["Task"],
+                "Notas Extra": data["Notas Extra"], # Columna personalizada
+                "Descripción": data["Description"],
+                "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
+                "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
+                "Duración": f"{data['Duration']} días",
+                "Estado": status,
+                "Dependencia": data["Dependency Info"].replace("🔗", "").replace("🟢", "").strip(),
+                "Gráfica": visibilidad
+            })
+        
+        df_table = pd.DataFrame(table_data)
+        
+        # Mostramos la tabla como dataframe de solo lectura para evitar confusiones de edición
+        st.dataframe(df_table, use_container_width=True, hide_index=True)
+        
+        # Botón para descargar el resultado en CSV
+        csv = df_table.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Reporte Completo (Excel / CSV)",
+            data=csv,
+            file_name='reporte_cronograma.csv',
+            mime='text/csv',
+        )
 
 except KeyError as e:
     st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien. Detalles: {e}")
