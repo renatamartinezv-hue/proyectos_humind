@@ -15,7 +15,7 @@ TAB_NAME = "Sheet1"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 hoy = datetime.today().date()
-default_start = hoy # Hacemos que la fecha por defecto sea hoy
+default_start = hoy 
 
 # 2. Lógica de Base de Datos
 try:
@@ -80,22 +80,21 @@ try:
         except (ValueError, TypeError):
             t_duration = 1
             
-        t_manual_start = row["Start Date"]
+        # Nos aseguramos de que el inicio manual sea una fecha real o None
+        t_manual_start = pd.to_datetime(row["Start Date"]).date() if pd.notna(row["Start Date"]) else None
         
         if t_pre == "" or t_pre.lower() == "none" or t_pre == "nan":
             dependency_text = "Independiente 🟢"
-            if pd.notna(t_manual_start):
-                t_start = t_manual_start
-            else:
-                t_start = default_start
+            t_start = t_manual_start if t_manual_start else default_start
         else:
             dependency_text = f"Depende de: {t_pre} 🔗"
             if t_pre in calculated_data:
-                earliest_start = calculated_data[t_pre]["Finish"] 
+                # Extraemos la fecha garantizando que sea Date
+                earliest_start = pd.to_datetime(calculated_data[t_pre]["Finish"]).date()
             else:
                 earliest_start = default_start 
             
-            if pd.notna(t_manual_start) and t_manual_start > earliest_start:
+            if t_manual_start and t_manual_start > earliest_start:
                 t_start = t_manual_start
             else:
                 t_start = earliest_start
@@ -113,23 +112,28 @@ try:
     final_df = pd.DataFrame(list(calculated_data.values()))
     
     if not final_df.empty:
+        # === AQUÍ ESTÁ LA SOLUCIÓN DEFINITIVA A TU DIAGNÓSTICO ===
+        # Obligamos a que las columnas sean DATETIME nativo de Pandas antes de pasarlas a Plotly
+        final_df["Start"] = pd.to_datetime(final_df["Start"])
+        final_df["Finish"] = pd.to_datetime(final_df["Finish"])
+        
         final_df = final_df.sort_values(by=["Project", "Start"])
         
-        final_df["Start_str"] = pd.to_datetime(final_df["Start"]).dt.strftime('%d %b')
-        final_df["Finish_str"] = pd.to_datetime(final_df["Finish"]).dt.strftime('%d %b')
+        final_df["Start_str"] = final_df["Start"].dt.strftime('%d %b')
+        final_df["Finish_str"] = final_df["Finish"].dt.strftime('%d %b')
         
         final_df["Label"] = final_df.apply(
             lambda x: f"{str(x['Task'])} ({str(x['Start_str'])} - {str(x['Finish_str'])})", 
             axis=1
         )
         
-        # === AQUI ESTÁ LA MAGIA DEL COLOR, SIMPLE Y SEGURA ===
+        # Como "Finish" ya es estrictamente Datetime, la lógica de Completado (Gris) es 100% segura
         final_df["Color_Visual"] = final_df.apply(
-            lambda row: "Completado (Gris)" if pd.to_datetime(row["Finish"]).date() < hoy else str(row["Project"]), 
+            lambda row: "Completado (Gris)" if row["Finish"].date() < hoy else str(row["Project"]), 
             axis=1
         )
         
-        color_map = {"Completado (Gris)": "#d3d3d3"}  # Gris claro estándar
+        color_map = {"Completado (Gris)": "#d3d3d3"} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
         
@@ -158,46 +162,4 @@ try:
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y="Task", 
-            color="Color_Visual", 
-            color_discrete_map=color_map, 
-            text="Label",     
-            hover_data=["Project", "Dependency Info"], 
-        )
-        
-        fig.update_traces(
-            textfont_size=14, 
-            textfont_color="black",
-            textposition='inside', 
-            insidetextanchor='middle'
-        )
-        
-        fig.update_yaxes(autorange="reversed", categoryorder='array', categoryarray=final_df['Task'].tolist())
-        fig.update_layout(plot_bgcolor='white', height=max(400, len(final_df) * 45)) 
-        fig.update_xaxes(
-            showgrid=True, 
-            gridcolor='lightgray', 
-            gridwidth=1,
-            tickformat="%b %d, %Y"
-        )
-        
-        # === LA LÍNEA ROJA DE HOY (Sin líneas horizontales conflictivas) ===
-        fig.add_vline(
-            x=hoy.strftime("%Y-%m-%d"), 
-            line_width=3, 
-            line_dash="dash", 
-            line_color="red", 
-            annotation_text=" HOY ", 
-            annotation_position="top right", 
-            annotation_font_color="red",
-            annotation_font_size=14
-        )
-        
-        st.plotly_chart(fig, width="stretch", use_container_width=True)
-    else:
-        st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
-
-except KeyError as e:
-    st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien. Detalles: {e}")
-except Exception as e:
-    st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
+            y="Task",
