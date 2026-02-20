@@ -111,10 +111,11 @@ try:
             "Task": t_task,
             "Original_Start": t_start,
             "Original_Finish": t_end,
+            "Duration": t_duration,
             "Dependency Info": dependency_text
         }
         
-    # === EL TRUCO MÁGICO: PARTIR LAS BARRAS QUE CRUZAN EL "HOY" ===
+    # === EL TRUCO MÁGICO: PARTIR LAS BARRAS ===
     final_tasks = []
     fecha_hoy_segura = pd.to_datetime(hoy)
     
@@ -147,7 +148,6 @@ try:
             axis=1
         )
         
-        # === CREADOR DINÁMICO DE COLORES APAGADOS (SÚPER ROBUSTO) ===
         color_map = {} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
@@ -159,7 +159,6 @@ try:
                 
                 c_str = str(base_color).strip().lower()
                 
-                # Intentamos extraer el RGB, sin importar si es HEX o RGB textual
                 try:
                     if c_str.startswith('#'):
                         hex_c = c_str.lstrip('#')
@@ -170,19 +169,16 @@ try:
                     else:
                         r, g, b = 150, 150, 150
                         
-                    # Apagamos el color mezclándolo con gris
                     r_muted = int(r * 0.4 + 210 * 0.6)
                     g_muted = int(g * 0.4 + 210 * 0.6)
                     b_muted = int(b * 0.4 + 210 * 0.6)
                     muted_color = f'rgb({r_muted},{g_muted},{b_muted})'
                     
                 except Exception:
-                    # Plan de rescate final: si todo falla, gris claro seguro.
                     muted_color = "#d3d3d3"
                 
                 color_map[f"{p} (Completado)"] = muted_color
                 color_idx += 1
-        # ==============================================================
     
     st.write("---") 
     st.write("### 📊 Resumen del Portafolio")
@@ -254,6 +250,40 @@ try:
         )
         
         st.plotly_chart(fig, width="stretch", use_container_width=True)
+        
+        # === NUEVA SECCIÓN: TABLA DESPLEGABLE CON DETALLES ===
+        st.write("---")
+        st.write("### 📋 Detalles del Cronograma")
+        with st.expander("Haz clic aquí para desplegar la tabla con las fechas y estados calculados"):
+            table_data = []
+            for t_id, data in calculated_data.items():
+                o_start = data["Original_Start"]
+                o_finish = data["Original_Finish"]
+                
+                # Asignar un estado dinámico basado en las fechas calculadas
+                if o_finish.date() <= hoy:
+                    status = "Completado ✅"
+                elif o_start.date() > hoy:
+                    status = "Pendiente ⏳"
+                else:
+                    status = "En Proceso 🔵"
+
+                table_data.append({
+                    "ID": t_id,
+                    "Proyecto": data["Project"],
+                    "Tarea": data["Task"],
+                    "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
+                    "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
+                    "Duración": f"{data['Duration']} días",
+                    "Dependencia": data["Dependency Info"].replace("🔗", "").replace("🟢", "").strip(),
+                    "Estado": status
+                })
+            
+            # Convertimos a DataFrame y mostramos
+            df_table = pd.DataFrame(table_data)
+            st.dataframe(df_table, use_container_width=True, hide_index=True)
+        # ======================================================
+
     else:
         st.info("No hay tareas válidas para mostrar en el gráfico. ¡Agrega algunas en la tabla de arriba!")
 
