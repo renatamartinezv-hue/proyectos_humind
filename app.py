@@ -143,7 +143,7 @@ try:
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
-        # Es fundamental ordenar para que la jerarquía agrupe bien los proyectos visualmente
+        # ES VITAL ORDENAR PRIMERO PARA QUE LA JERARQUÍA FUNCIONE
         final_df = final_df.sort_values(by=["Project", "Original_Start"])
         
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
@@ -211,18 +211,23 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
-        # === MAGIA HIERÁRQUICA REAL ===
-        # Le pasamos las listas exactas de datos para crear un eje Multicategoría nativo
+        # === AQUÍ ESTÁ LA MAGIA CORREGIDA: ÍNDICE MÚLTIPLE DE PANDAS ===
+        eje_jerarquico = pd.MultiIndex.from_arrays(
+            [final_df["Project"], final_df["Task"]], 
+            names=["Proyecto", "Tarea"]
+        )
+        
         fig = px.timeline(
             final_df, 
             x_start="Start", 
             x_end="Finish", 
-            y=[final_df["Project"], final_df["Task"]], # <--- Jerarquía anidada pura
+            y=eje_jerarquico, # Pasamos el índice estructurado, no una lista suelta
             color="Color_Visual", 
             color_discrete_map=color_map, 
             text="Label",     
             hover_data=["Dependency Info"],
         )
+        # ==============================================================
         
         fig.update_traces(
             textfont_size=14, 
@@ -231,10 +236,9 @@ try:
             insidetextanchor='middle'
         )
         
-        # Eliminamos el título genérico del eje Y para máxima limpieza
         fig.update_yaxes(
             autorange="reversed", 
-            title_text=""
+            title_text="" # Eliminamos etiquetas estorbosas
         ) 
         
         fig.update_layout(
