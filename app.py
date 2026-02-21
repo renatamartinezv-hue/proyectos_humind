@@ -7,7 +7,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
 st.set_page_config(layout="wide")
-st.title("Diagnóstico 25 Empresa")
+st.title("Diagnóstico 25 Empresas")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
@@ -73,7 +73,6 @@ st.write("### 1. Edita el Calendario de Proyectos")
 
 # === MAGIA PARA OCULTAR COLUMNAS ===
 todas_las_columnas = list(st.session_state['tasks'].columns)
-# Selector de columnas: Por defecto se muestran todas
 columnas_visibles = st.multiselect(
     "👁️ Columnas visibles en el panel de edición (Quita las que quieras ocultar de tu vista):",
     options=todas_las_columnas,
@@ -86,7 +85,7 @@ edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
     width="stretch",
-    column_order=columnas_visibles, # <--- Aquí le decimos a Streamlit qué columnas mostrar
+    column_order=columnas_visibles, 
     column_config={
         "Task ID": st.column_config.TextColumn("Task ID", required=True),
         "Project Name": st.column_config.TextColumn("Project Name", required=True), 
@@ -277,7 +276,6 @@ try:
                 "Llave_Secreta": False,
                 "Project": True,
                 "Dependency Info": True
-                # Nota: Las columnas ocultas no se muestran en este tooltip
             },
         )
         
@@ -294,10 +292,10 @@ try:
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
-        hitos_x = []
-        hitos_y_proy = []
-        hitos_y_tarea = []
+        # === NUEVA LÓGICA DE HITOS (MILESTONES) ===
+        hitos_unicos = set()
         
+        # 1. Fin de Proyecto
         fechas_fin_proy = {}
         for idx, row in final_df.iterrows():
             p = row["Project"]
@@ -307,9 +305,21 @@ try:
                 fechas_fin_proy[p] = {"fecha": f, "tarea": t}
                 
         for p, datos in fechas_fin_proy.items():
-            hitos_x.append(datos["fecha"])
+            hitos_unicos.add((p, datos["tarea"], datos["fecha"]))
+            
+        # 2. Tareas Independientes
+        for idx, row in final_df.iterrows():
+            if "Independiente" in row["Dependency Info"]:
+                hitos_unicos.add((row["Project"], row["Task"], row["Original_Finish"]))
+                
+        hitos_x = []
+        hitos_y_proy = []
+        hitos_y_tarea = []
+        
+        for p, t, f in hitos_unicos:
+            hitos_x.append(f)
             hitos_y_proy.append(p)
-            hitos_y_tarea.append(datos["tarea"])
+            hitos_y_tarea.append(t)
             
         fig.add_trace(go.Scatter(
             x=hitos_x,
@@ -322,6 +332,7 @@ try:
             hoverinfo='skip',
             showlegend=False
         ))
+        # ==========================================
 
         fig.update_yaxes(
             autorange="reversed", 
@@ -380,7 +391,7 @@ try:
 
     st.write("---")
     
-    # === TABLA DE REPORTES (Muestra TODO, incluyendo las columnas que ocultaste arriba) ===
+    # === TABLA DE REPORTES ===
     st.write("### 📋 Reporte Final Descargable")
     with st.expander("Haz clic aquí para ver y descargar el reporte completo", expanded=True):
         
@@ -401,7 +412,7 @@ try:
                 "Proyecto": data["Project"],
                 "Tarea": data["Task"],
                 "Descripción": data["Description"],
-                "Notas Extra": data["Notas Extra"], # <--- Aparece en el Excel final
+                "Notas Extra": data["Notas Extra"],
                 "Inicio Calculado": o_start.strftime("%d/%m/%Y"),
                 "Fin Calculado": o_finish.strftime("%d/%m/%Y"),
                 "Duración": f"{data['Duration']} días",
