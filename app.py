@@ -74,10 +74,25 @@ except Exception as e:
 st.write("### 1. Edita el Calendario de Proyectos")
 
 # 3. Editor de Datos PRINCIPAL
+# === AQUI ESTÁ EL ORDEN EXACTO DE LAS COLUMNAS ===
+orden_columnas = [
+    "Task ID", 
+    "Parent Task ID", 
+    "Project Name", 
+    "Task Name", 
+    "Description", 
+    "Notas Extra", 
+    "Color", 
+    "Duration (Days)", 
+    "Depends On", 
+    "Start Date"
+]
+
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
     width="stretch",
+    column_order=orden_columnas, # Forzamos el orden visual aquí
     column_config={
         "Task ID": st.column_config.TextColumn("Task ID", required=True),
         "Parent Task ID": st.column_config.TextColumn("Parent Task ID", help="Deja vacío si es tarea principal. Si es subtarea, pon el ID de su padre."),
