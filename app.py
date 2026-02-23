@@ -228,11 +228,8 @@ try:
     if not final_df.empty:
         # === CREAR ESPACIO VISUAL ENTRE TAREAS SECUENCIALES ===
         def adjust_finish_for_plot(row):
-            # Si esta es la verdadera fecha final de la tarea (no el corte de "HOY"), 
-            # le restamos 3 horas solo para crear el hueco visual.
             if row["Finish"] == row["Original_Finish"]:
                 return row["Finish"] - pd.Timedelta(hours=3)
-            # Si es el bloque que termina en "HOY", lo dejamos intacto para que no se separe del bloque activo.
             return row["Finish"]
             
         final_df["Plot_Finish"] = final_df.apply(adjust_finish_for_plot, axis=1)
@@ -269,11 +266,9 @@ try:
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
+        # === TEXTO DE LA ETIQUETA CORREGIDO ===
         def generar_label(x):
-            # Si es Padre, lo dejamos vacío para que no estorbe
-            if x["Task ID"] in padres_ids:
-                return "" 
-            # Si es la mitad opaca del efecto de "HOY", también lo dejamos vacío
+            # Solamente ocultamos el texto si es la mitad opaca del efecto "HOY"
             if x.get("Hide_Label", False):
                 return ""
                 
@@ -351,7 +346,6 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
-        # Usamos 'Plot_Finish' para el gráfico en lugar de 'Finish'
         fig = px.timeline(
             final_df, 
             x_start="Start", 
