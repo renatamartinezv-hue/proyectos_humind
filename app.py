@@ -71,21 +71,11 @@ except Exception as e:
 
 st.write("### 1. Edita el Calendario de Proyectos")
 
-# === MAGIA PARA OCULTAR COLUMNAS ===
-todas_las_columnas = list(st.session_state['tasks'].columns)
-columnas_visibles = st.multiselect(
-    "👁️ Columnas visibles en el panel de edición (Quita las que quieras ocultar de tu vista):",
-    options=todas_las_columnas,
-    default=todas_las_columnas
-)
-# ===================================
-
-# 3. Editor de Datos PRINCIPAL
+# 3. Editor de Datos PRINCIPAL (Ahora muestra todo por defecto)
 edited_df = st.data_editor(
     st.session_state['tasks'], 
     num_rows="dynamic", 
     width="stretch",
-    column_order=columnas_visibles, 
     column_config={
         "Task ID": st.column_config.TextColumn("Task ID", required=True),
         "Project Name": st.column_config.TextColumn("Project Name", required=True), 
@@ -107,7 +97,7 @@ edited_df = st.data_editor(
 if st.button("💾 Guardar Cambios en Google Sheets"):
     try:
         conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=edited_df)
-        st.success("¡Base de datos actualizada con éxito! Las columnas ocultas también se guardaron.")
+        st.success("¡Base de datos actualizada con éxito!")
         st.cache_data.clear() 
     except Exception as e:
         st.error(f"Error al guardar: {e}")
@@ -292,7 +282,7 @@ try:
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
-        # === NUEVA LÓGICA DE HITOS (MILESTONES) ===
+        # === LÓGICA DE HITOS (MILESTONES) ===
         hitos_unicos = set()
         
         # 1. Fin de Proyecto
