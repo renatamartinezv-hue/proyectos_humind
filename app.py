@@ -39,7 +39,6 @@ try:
     df = df.dropna(how="all") 
     
     if df.empty:
-        # Datos de prueba con el nuevo formato
         st.session_state['tasks'] = pd.DataFrame([
             {"Task ID": "T1", "Parent Task ID": None, "Project Name": "Proyecto Alfa", "Task Name": "Fase de Desarrollo", "Responsable(s)": "Equipo Tech", "Horas Invertidas": 0, "Color": "Gris", "Duration (Days)": 1, "Depends On": None, "Start Date": hoy, "Notas Extra": ""},
             {"Task ID": "T2", "Parent Task ID": "T1", "Project Name": "Proyecto Alfa", "Task Name": "Frontend", "Responsable(s)": "Carlos M.", "Horas Invertidas": 40, "Color": "Azul", "Duration (Days)": 3, "Depends On": None, "Start Date": hoy, "Notas Extra": ""},
@@ -47,7 +46,6 @@ try:
             {"Task ID": "T4", "Parent Task ID": None, "Project Name": "Proyecto Beta", "Task Name": "Lanzamiento", "Responsable(s)": "Dirección", "Horas Invertidas": 15, "Color": "Verde", "Duration (Days)": 5, "Depends On": None, "Start Date": hoy, "Notas Extra": ""},
         ])
     else:
-        # Asegurar que todas las columnas existan
         for col in ["Notas Extra", "Parent Task ID", "Responsable(s)"]:
             if col not in df.columns: df[col] = ""
             
@@ -70,7 +68,6 @@ try:
         if "Start Date" in df.columns:
             df["Start Date"] = pd.to_datetime(df["Start Date"], errors='coerce').dt.date
             
-        # Si quedó la columna Description en el excel viejo, la quitamos del dataframe
         if "Description" in df.columns:
             df = df.drop(columns=["Description"])
             
@@ -203,10 +200,8 @@ try:
                 calculated_data[p_id]["Original_Finish"] = max_finish
                 calculated_data[p_id]["Duration"] = (max_finish - min_start).days
                 calculated_data[p_id]["Dependency Info"] = "Tarea Padre 📂"
-                # Sumamos las horas de los hijos al padre automáticamente
                 calculated_data[p_id]["Horas Invertidas"] = sum([h["Horas Invertidas"] for h in hijos])
                 
-                # Juntamos los responsables si el padre no tiene
                 if not calculated_data[p_id]["Responsable(s)"]:
                     resps = set([h["Responsable(s)"] for h in hijos if h["Responsable(s)"]])
                     calculated_data[p_id]["Responsable(s)"] = ", ".join(resps)
@@ -230,30 +225,47 @@ try:
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
-        # Aseguramos que los Padres se dibujen PRIMERO (para quedar al fondo) y los hijos encima
-        final_df["Is_Parent"] = final_df["Task ID"].apply(lambda x: 0 if x in padres_ids else 1)
-        final_df = final_df.sort_values(by=["Project", "Original_Start", "Is_Parent"])
         
-        # LÓGICA MAGISTRAL: Encontrar el nombre del Padre para unificarlos en la misma línea
-        def get_top_task_name(row_data):
+        # === ORDENAMIENTO PERFECTO (Padre primero, luego sus hijos) ===
+        def get_sort_key(row_data):
             p_id = row_data["Parent Task ID"]
+            t_id = row_data["Task ID"]
+            
             if p_id and p_id in calculated_data:
-                return calculated_data[p_id]["Task"]
-            return row_data["Task"]
+                # Es hijo -> Agrupado bajo el tiempo del padre, con sufijo _1_ para ir debajo
+                parent_start = calculated_data[p_id]["Original_Start"].timestamp()
+                return f"{parent_start}_1_{p_id}" 
+            elif t_id in padres_ids:
+                # Es padre -> Prefijo _0_ para ir arriba
+                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}"
+            else:
+                # Independiente
+                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}"
 
-        # Ahora la Llave Secreta agrupa al hijo en el mismo renglón que su padre
-        final_df["Llave_Secreta"] = final_df["Project"].astype(str) + "|||" + final_df.apply(get_top_task_name, axis=1)
+        final_df["Sort_Key"] = final_df.apply(get_sort_key, axis=1)
+        final_df = final_df.sort_values(by=["Project", "Sort_Key", "Original_Start"])
+        
+        # === ASIGNAR ETIQUETAS Y RENGLONES EJE Y ===
+        def get_y_axis_name(row_data):
+            p_id = row_data["Parent Task ID"]
+            t_id = row_data["Task ID"]
+            
+            if p_id and p_id in calculated_data:
+                nombre_padre = calculated_data[p_id]["Task"]
+                return f"   ↳ Subtareas de {nombre_padre}"
+            elif t_id in padres_ids:
+                return f"📂 {row_data['Task']}"
+            else:
+                return row_data["Task"]
+
+        # Cada Padre tiene su renglón, y los Hijos comparten el suyo debajo del Padre
+        final_df["Llave_Secreta"] = final_df["Project"].astype(str) + "|||" + final_df.apply(get_y_axis_name, axis=1)
         
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
-        # === TEXTO ESPECÍFICO DE 4 RENGLONES ===
+        # Texto de 4 renglones 
         def generar_label(x):
-            # Si es Padre y tiene hijos en su mismo renglón, le quitamos el texto para que no se encime y sea ilegible
-            if x["Task ID"] in padres_ids:
-                return "" 
-            
-            # Formato de 4 líneas usando HTML para saltos de línea en Plotly
             return (
                 f"<b>{x['Project']} - {x['Task']}</b><br>"
                 f"{x['Orig_Start_str']} a {x['Orig_Finish_str']} - {x['Duration']} días<br>"
@@ -290,12 +302,9 @@ try:
                 else:
                     base_color = project_default_colors.get(row["Project"], "#3366cc")
                     
-                # Si es una tarea padre, la hacemos transparente/tenue para que no cubra los colores de sus hijos
-                if tid in padres_ids:
-                    base_color = "rgba(200, 200, 200, 0.2)"
-                    
                 color_map[active_key] = base_color
                 
+                # LÓGICA DE TRANSPARENCIA: Mismo color exacto, pero al 30% de opacidad para tareas pasadas
                 c_str = str(base_color).strip().lower()
                 try:
                     if c_str.startswith('#'):
@@ -305,14 +314,10 @@ try:
                     else:
                         r, g, b = 150, 150, 150
                         
-                    r_muted = int(r * 0.4 + 210 * 0.6)
-                    g_muted = int(g * 0.4 + 210 * 0.6)
-                    b_muted = int(b * 0.4 + 210 * 0.6)
-                    muted_color = f'rgba({r_muted},{g_muted},{b_muted}, 0.8)'
-                    
-                    if tid in padres_ids: muted_color = "rgba(200, 200, 200, 0.1)" # Padre pasado
+                    # 0.3 es el nivel de transparencia (30%). Se verá como un color pastel idéntico al original.
+                    muted_color = f'rgba({r},{g},{b}, 0.3)'
                 except Exception:
-                    muted_color = "#d3d3d3"
+                    muted_color = "rgba(211,211,211, 0.3)"
                 
                 color_map[past_key] = muted_color
     
@@ -365,6 +370,7 @@ try:
         for trace in fig.data:
             if getattr(trace, "y", None) is not None:
                 proyectos = [str(val).split("|||")[0] for val in trace.y]
+                # Ahora la llave secreta tiene el nombre correcto del eje Y en la posición 1
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
@@ -375,7 +381,7 @@ try:
         for idx, row in final_df.iterrows():
             p = row["Project"]
             f = row["Original_Finish"]
-            t = get_top_task_name(row)
+            t = row["Llave_Secreta"].split("|||")[1] # Usamos el nombre exacto del renglón visual
             if p not in fechas_fin_proy or f > fechas_fin_proy[p]["fecha"]:
                 fechas_fin_proy[p] = {"fecha": f, "tarea": t}
                 
@@ -384,7 +390,7 @@ try:
             
         for idx, row in final_df.iterrows():
             if "Independiente" in row["Dependency Info"] and row["Task ID"] not in padres_ids:
-                hitos_unicos.add((row["Project"], get_top_task_name(row), row["Original_Finish"]))
+                hitos_unicos.add((row["Project"], row["Llave_Secreta"].split("|||")[1], row["Original_Finish"]))
                 
         hitos_x = []
         hitos_y_proy = []
@@ -431,7 +437,6 @@ try:
         
         fig.update_layout(
             plot_bgcolor='white', 
-            # Aumentamos el tamaño de la fila (100) para que quepan bien los 4 renglones de texto
             height=max(450, len(final_df['Llave_Secreta'].unique()) * 100),
             margin=dict(l=150, r=50),
             showlegend=False 
