@@ -215,37 +215,43 @@ try:
         o_finish = data["Original_Finish"]
         
         if o_start.date() < hoy and o_finish.date() > hoy:
-            final_tasks.append({**data, "Start": o_start, "Finish": fecha_hoy_segura, "Status": "Pasado"})
-            final_tasks.append({**data, "Start": fecha_hoy_segura, "Finish": o_finish, "Status": "Activo"})
+            # OCULTAMOS EL TEXTO EN LA MITAD PASADA CON "Hide_Label: True"
+            final_tasks.append({**data, "Start": o_start, "Finish": fecha_hoy_segura, "Status": "Pasado", "Hide_Label": True})
+            final_tasks.append({**data, "Start": fecha_hoy_segura, "Finish": o_finish, "Status": "Activo", "Hide_Label": False})
         elif o_finish.date() <= hoy:
-            final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Pasado"})
+            final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Pasado", "Hide_Label": False})
         else:
-            final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Activo"})
+            final_tasks.append({**data, "Start": o_start, "Finish": o_finish, "Status": "Activo", "Hide_Label": False})
             
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
+        # === CREAR ESPACIO VISUAL ENTRE TAREAS SECUENCIALES ===
+        def adjust_finish_for_plot(row):
+            # Si esta es la verdadera fecha final de la tarea (no el corte de "HOY"), 
+            # le restamos 3 horas solo para crear el hueco visual.
+            if row["Finish"] == row["Original_Finish"]:
+                return row["Finish"] - pd.Timedelta(hours=3)
+            # Si es el bloque que termina en "HOY", lo dejamos intacto para que no se separe del bloque activo.
+            return row["Finish"]
+            
+        final_df["Plot_Finish"] = final_df.apply(adjust_finish_for_plot, axis=1)
         
-        # === ORDENAMIENTO PERFECTO (Padre primero, luego sus hijos) ===
         def get_sort_key(row_data):
             p_id = row_data["Parent Task ID"]
             t_id = row_data["Task ID"]
             
             if p_id and p_id in calculated_data:
-                # Es hijo -> Agrupado bajo el tiempo del padre, con sufijo _1_ para ir debajo
                 parent_start = calculated_data[p_id]["Original_Start"].timestamp()
                 return f"{parent_start}_1_{p_id}" 
             elif t_id in padres_ids:
-                # Es padre -> Prefijo _0_ para ir arriba
                 return f"{row_data['Original_Start'].timestamp()}_0_{t_id}"
             else:
-                # Independiente
                 return f"{row_data['Original_Start'].timestamp()}_0_{t_id}"
 
         final_df["Sort_Key"] = final_df.apply(get_sort_key, axis=1)
         final_df = final_df.sort_values(by=["Project", "Sort_Key", "Original_Start"])
         
-        # === ASIGNAR ETIQUETAS Y RENGLONES EJE Y ===
         def get_y_axis_name(row_data):
             p_id = row_data["Parent Task ID"]
             t_id = row_data["Task ID"]
@@ -258,14 +264,19 @@ try:
             else:
                 return row_data["Task"]
 
-        # Cada Padre tiene su renglón, y los Hijos comparten el suyo debajo del Padre
         final_df["Llave_Secreta"] = final_df["Project"].astype(str) + "|||" + final_df.apply(get_y_axis_name, axis=1)
         
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
-        # Texto de 4 renglones 
         def generar_label(x):
+            # Si es Padre, lo dejamos vacío para que no estorbe
+            if x["Task ID"] in padres_ids:
+                return "" 
+            # Si es la mitad opaca del efecto de "HOY", también lo dejamos vacío
+            if x.get("Hide_Label", False):
+                return ""
+                
             return (
                 f"<b>{x['Project']} - {x['Task']}</b><br>"
                 f"{x['Orig_Start_str']} a {x['Orig_Finish_str']} - {x['Duration']} días<br>"
@@ -304,7 +315,6 @@ try:
                     
                 color_map[active_key] = base_color
                 
-                # LÓGICA DE TRANSPARENCIA: Mismo color exacto, pero al 30% de opacidad para tareas pasadas
                 c_str = str(base_color).strip().lower()
                 try:
                     if c_str.startswith('#'):
@@ -314,7 +324,6 @@ try:
                     else:
                         r, g, b = 150, 150, 150
                         
-                    # 0.3 es el nivel de transparencia (30%). Se verá como un color pastel idéntico al original.
                     muted_color = f'rgba({r},{g},{b}, 0.3)'
                 except Exception:
                     muted_color = "rgba(211,211,211, 0.3)"
@@ -342,10 +351,11 @@ try:
     st.write("### 2. Línea de Tiempo de Proyectos")
     
     if not final_df.empty:
+        # Usamos 'Plot_Finish' para el gráfico en lugar de 'Finish'
         fig = px.timeline(
             final_df, 
             x_start="Start", 
-            x_end="Finish", 
+            x_end="Plot_Finish", 
             y="Llave_Secreta", 
             color="Color_Key", 
             color_discrete_map=color_map, 
@@ -353,6 +363,7 @@ try:
             hover_data={
                 "Color_Key": False,
                 "Llave_Secreta": False,
+                "Plot_Finish": False,
                 "Project": True,
                 "Parent Task ID": True,
                 "Responsable(s)": True,
@@ -370,7 +381,6 @@ try:
         for trace in fig.data:
             if getattr(trace, "y", None) is not None:
                 proyectos = [str(val).split("|||")[0] for val in trace.y]
-                # Ahora la llave secreta tiene el nombre correcto del eje Y en la posición 1
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
@@ -381,7 +391,7 @@ try:
         for idx, row in final_df.iterrows():
             p = row["Project"]
             f = row["Original_Finish"]
-            t = row["Llave_Secreta"].split("|||")[1] # Usamos el nombre exacto del renglón visual
+            t = row["Llave_Secreta"].split("|||")[1] 
             if p not in fechas_fin_proy or f > fechas_fin_proy[p]["fecha"]:
                 fechas_fin_proy[p] = {"fecha": f, "tarea": t}
                 
