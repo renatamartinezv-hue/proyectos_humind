@@ -115,18 +115,11 @@ edited_df = st.data_editor(
     }
 )
 
-if st.button("💾 Guardar Cambios en Google Sheets"):
-    try:
-        conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=edited_df)
-        st.success("¡Base de datos actualizada con éxito!")
-        st.cache_data.clear() 
-    except Exception as e:
-        st.error(f"Error al guardar: {e}")
-
+# === 4. LÓGICA DE CÁLCULO DINÁMICO (Ajuste automático de Padres e Hijas) ===
 calculated_data = {}
 
 try:
-    # === PRIMERA PASADA: Cálculos Base ===
+    # Pasada 1: Extraer todos los datos del editor
     for index, row in edited_df.iterrows():
         if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() in ["None", ""]:
             continue
@@ -152,21 +145,6 @@ try:
             
         t_manual_start = pd.to_datetime(row["Start Date"]) if pd.notna(row["Start Date"]) and row["Start Date"] != "" else None
         
-        if t_pre == "":
-            dependency_text = "Independiente 🟢"
-            t_start = t_manual_start if t_manual_start is not None else default_start
-        else:
-            dependency_text = f"Depende de: {t_pre} 🔗"
-            if t_pre in calculated_data:
-                earliest_start = calculated_data[t_pre]["Original_Finish"] 
-            else:
-                earliest_start = default_start 
-            
-            t_start = t_manual_start if t_manual_start is not None and t_manual_start > earliest_start else earliest_start
-        
-        t_start = pd.to_datetime(t_start)
-        t_end = t_start + pd.Timedelta(days=t_duration)
-        
         calculated_data[t_id] = {
             "Task ID": t_id,
             "Parent Task ID": t_parent,
@@ -176,38 +154,98 @@ try:
             "Horas Invertidas": t_horas,
             "Notas Extra": t_notas,
             "Color_Raw": t_color_raw, 
-            "Original_Start": t_start,
-            "Original_Finish": t_end,
+            "Manual_Start": t_manual_start,
             "Duration": t_duration,
             "Depends_On_ID": t_pre, 
-            "Dependency Info": dependency_text
+            "Dependency Info": "",
+            "Original_Start": None,
+            "Original_Finish": None
         }
 
-    # === SEGUNDA PASADA: Ajustar las Tareas Padre ===
-    padres_ids = set([data["Parent Task ID"] for t_id, data in calculated_data.items() if data["Parent Task ID"]])
+    # Pasada 2: Motor de Cálculo Recursivo
+    visited = set()
+    resolving = set()
     
-    for p_id in padres_ids:
-        if p_id in calculated_data:
-            hijos = [data for t_id, data in calculated_data.items() if data["Parent Task ID"] == p_id]
-            if hijos:
-                min_start = min([h["Original_Start"] for h in hijos])
-                max_finish = max([h["Original_Finish"] for h in hijos])
+    def compute_dates(tid):
+        if tid in visited:
+            return calculated_data[tid]["Original_Start"], calculated_data[tid]["Original_Finish"]
+        if tid in resolving:
+            # Romper bucles si hay dependencia circular por error
+            s = calculated_data[tid]["Manual_Start"] if calculated_data[tid]["Manual_Start"] else default_start
+            f = s + pd.Timedelta(days=calculated_data[tid]["Duration"])
+            return s, f
+            
+        resolving.add(tid)
+        data = calculated_data[tid]
+        
+        # Buscar tareas que tengan a esta como padre
+        hijos = [h_id for h_id, h_data in calculated_data.items() if h_data["Parent Task ID"] == tid]
+        
+        if hijos:
+            # --- LÓGICA DE TAREA PADRE ---
+            # Se ajusta estrictamente a los tiempos de sus hijas
+            min_s, max_f = None, None
+            horas_totales = 0
+            resps = set()
+            
+            for h in hijos:
+                c_s, c_f = compute_dates(h)
+                if min_s is None or c_s < min_s: min_s = c_s
+                if max_f is None or c_f > max_f: max_f = c_f
                 
-                calculated_data[p_id]["Original_Start"] = min_start
-                calculated_data[p_id]["Original_Finish"] = max_finish
-                calculated_data[p_id]["Duration"] = (max_finish - min_start).days
-                calculated_data[p_id]["Dependency Info"] = "Tarea Padre 📂"
-                calculated_data[p_id]["Horas Invertidas"] = sum([h["Horas Invertidas"] for h in hijos])
+                horas_totales += calculated_data[h]["Horas Invertidas"]
+                if calculated_data[h]["Responsable(s)"]:
+                    for r in str(calculated_data[h]["Responsable(s)"]).split(","):
+                        if r.strip(): resps.add(r.strip())
+            
+            s = min_s if min_s else default_start
+            f = max_f if max_f else (s + pd.Timedelta(days=1))
+            
+            calculated_data[tid]["Original_Start"] = s
+            calculated_data[tid]["Original_Finish"] = f
+            calculated_data[tid]["Duration"] = max(1, (f - s).days)
+            calculated_data[tid]["Horas Invertidas"] = horas_totales
+            
+            if not data["Responsable(s)"]:
+                calculated_data[tid]["Responsable(s)"] = ", ".join(list(resps))
                 
-                if not calculated_data[p_id]["Responsable(s)"]:
-                    resps = set([h["Responsable(s)"] for h in hijos if h["Responsable(s)"]])
-                    calculated_data[p_id]["Responsable(s)"] = ", ".join(resps)
+            calculated_data[tid]["Dependency Info"] = "Tarea Padre 📂"
+            
+        else:
+            # --- LÓGICA DE TAREA HIJA (O INDEPENDIENTE) ---
+            dep_id = data["Depends_On_ID"]
+            manual_s = data["Manual_Start"]
+            
+            if dep_id and dep_id in calculated_data:
+                _, dep_f = compute_dates(dep_id)
+                s = dep_f # Inicia justo cuando acaba su dependencia
+                if manual_s and manual_s > s:
+                    s = manual_s
+                calculated_data[tid]["Dependency Info"] = f"Depende de: {dep_id} 🔗"
+            else:
+                s = manual_s if manual_s else default_start
+                calculated_data[tid]["Dependency Info"] = "Independiente 🟢"
+                
+            f = s + pd.Timedelta(days=data["Duration"])
+            
+            calculated_data[tid]["Original_Start"] = s
+            calculated_data[tid]["Original_Finish"] = f
+            
+        resolving.remove(tid)
+        visited.add(tid)
+        return calculated_data[tid]["Original_Start"], calculated_data[tid]["Original_Finish"]
+        
+    # Ejecutar el cálculo para todas las tareas
+    for tid in calculated_data:
+        compute_dates(tid)
+        
+    padres_ids = set([data["Parent Task ID"] for t_id, data in calculated_data.items() if data["Parent Task ID"]])
 
-    # === TERCERA PASADA: Cadenas Visuales (Rutas de Dependencia) ===
-    def get_root_task(task_id, visited=None):
-        if visited is None: visited = set()
-        if task_id in visited: return task_id 
-        visited.add(task_id)
+    # === Cadenas Visuales (Rutas de Dependencia) ===
+    def get_root_task(task_id, visited_nodes=None):
+        if visited_nodes is None: visited_nodes = set()
+        if task_id in visited_nodes: return task_id 
+        visited_nodes.add(task_id)
         
         if task_id not in calculated_data:
             return task_id
@@ -219,7 +257,7 @@ try:
         if calculated_data[task_id]["Parent Task ID"] != calculated_data[pred_id]["Parent Task ID"]:
             return task_id
             
-        return get_root_task(pred_id, visited)
+        return get_root_task(pred_id, visited_nodes)
 
     for tid, data in calculated_data.items():
         if data["Parent Task ID"]: 
@@ -232,7 +270,33 @@ try:
             else:
                 calculated_data[tid]["Track_Name"] = f"   ↳ Subtareas"
 
-    # Formatear para graficar
+except Exception as e:
+    st.error(f"Error procesando relaciones: {e}")
+
+# === BOTÓN DE GUARDAR REPOSICIONADO ===
+# Lo movemos debajo de los cálculos para poder inyectar las fechas calculadas al Excel
+if st.button("💾 Guardar Cambios en Google Sheets"):
+    try:
+        # Hacemos una copia para guardar
+        df_to_save = edited_df.copy()
+        
+        # Inyectamos los cálculos perfectos de las Tareas Padre en la base de datos
+        for index, row in df_to_save.iterrows():
+            t_id = str(row["Task ID"]).strip()
+            if t_id in calculated_data:
+                if calculated_data[t_id]["Dependency Info"] == "Tarea Padre 📂":
+                    df_to_save.at[index, "Start Date"] = calculated_data[t_id]["Original_Start"].date()
+                    df_to_save.at[index, "Duration (Days)"] = calculated_data[t_id]["Duration"]
+                    df_to_save.at[index, "Horas Invertidas"] = calculated_data[t_id]["Horas Invertidas"]
+                    
+        conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=df_to_save)
+        st.success("¡Base de datos actualizada! Las tareas padre se ajustaron automáticamente a las hijas.")
+        st.cache_data.clear() 
+    except Exception as e:
+        st.error(f"Error al guardar: {e}")
+
+try:
+    # === 5. PREPARACIÓN DE GRÁFICOS Y TABLAS ===
     final_tasks = []
     fecha_hoy_segura = pd.to_datetime(hoy)
     
@@ -366,7 +430,6 @@ try:
         tareas_unicas = len([t for t, d in calculated_data.items() if t not in padres_ids])
         total_horas = sum([d["Horas Invertidas"] for t, d in calculated_data.items() if t not in padres_ids])
         
-        # Cálculos de Tareas y Proyectos Activos
         tareas_activas = 0
         proyectos_stats = {}
         
@@ -374,12 +437,10 @@ try:
             o_start = data["Original_Start"].date()
             o_finish = data["Original_Finish"].date()
             
-            # Contar tareas activas (solo tareas hijas directas)
             if t_id not in padres_ids:
                 if o_start <= hoy < o_finish:
                     tareas_activas += 1
                     
-            # Registrar inicios y fines de cada proyecto
             proj = data["Project Name"]
             if proj not in proyectos_stats:
                 proyectos_stats[proj] = {"inicio": o_start, "fin": o_finish}
@@ -387,10 +448,8 @@ try:
                 if o_start < proyectos_stats[proj]["inicio"]: proyectos_stats[proj]["inicio"] = o_start
                 if o_finish > proyectos_stats[proj]["fin"]: proyectos_stats[proj]["fin"] = o_finish
                 
-        # Contar cuántos proyectos están en su ventana de tiempo activa
         proyectos_activos = sum(1 for p, dates in proyectos_stats.items() if dates["inicio"] <= hoy < dates["fin"])
 
-        # === DIBUJAR MÉTRICAS EN 6 COLUMNAS ===
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         col1.metric("⏳ Duración Total", f"{dias_totales} días")
         col2.metric("📅 Días Restantes", f"{dias_restantes} días")
@@ -574,6 +633,6 @@ try:
         )
 
 except KeyError as e:
-    st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien o le falta información. Detalles: {e}")
+    st.error(f"**Error de Dependencia:** Revisa que el ID de la tarea a la que estás apuntando exista. Detalles: {e}")
 except Exception as e:
     st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
