@@ -130,7 +130,7 @@ if st.button("💾 Guardar Cambios en Google Sheets"):
 calculated_data = {}
 
 try:
-    # 4. Cálculo Matemático
+    # === PRIMERA PASADA: Cálculos Base ===
     for index, row in edited_df.iterrows():
         if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() in ["None", ""]:
             continue
@@ -183,8 +183,8 @@ try:
             "Original_Start": t_start,
             "Original_Finish": t_end,
             "Duration": t_duration,
-            "Dependency Info": dependency_text,
-            "Track": 0 # Track por defecto
+            "Depends_On_ID": t_pre, # Guardamos el ID crudo para rastrear cadenas
+            "Dependency Info": dependency_text
         }
 
     # === SEGUNDA PASADA: Ajustar las Tareas Padre ===
@@ -207,31 +207,37 @@ try:
                     resps = set([h["Responsable(s)"] for h in hijos if h["Responsable(s)"]])
                     calculated_data[p_id]["Responsable(s)"] = ", ".join(resps)
 
-    # === TERCERA PASADA: Sistema Automático Anti-Choques (Tracks) para Hijas ===
-    parent_tracks = {}
-    # Ordenamos cronológicamente para ir acomodando las tareas
-    sorted_tasks_for_tracks = sorted(calculated_data.values(), key=lambda x: x["Original_Start"])
-    
-    for data in sorted_tasks_for_tracks:
-        p_id = data["Parent Task ID"]
-        if p_id and p_id in calculated_data:
-            if p_id not in parent_tracks:
-                parent_tracks[p_id] = []
+    # === TERCERA PASADA: Cadenas Visuales (Rutas de Dependencia) ===
+    def get_root_task(task_id, visited=None):
+        if visited is None: visited = set()
+        if task_id in visited: return task_id # Evita bucles infinitos si hay un error en los datos
+        visited.add(task_id)
+        
+        if task_id not in calculated_data:
+            return task_id
             
-            placed = False
-            # Buscar si cabe en algún renglón (track) existente de este Padre
-            for i, track_end in enumerate(parent_tracks[p_id]):
-                # Si el carril actual termina antes de que esta nueva tarea empiece, cabe perfecto.
-                if track_end < data["Original_Start"]: 
-                    calculated_data[data["Task ID"]]["Track"] = i
-                    parent_tracks[p_id][i] = data["Original_Finish"]
-                    placed = True
-                    break
+        pred_id = calculated_data[task_id].get("Depends_On_ID", "")
+        # Si no tiene dependencia o la dependencia no existe en nuestros datos, es raíz
+        if not pred_id or pred_id not in calculated_data:
+            return task_id
             
-            # Si no cabe en ningún renglón actual (choca con todas), creamos un renglón nuevo.
-            if not placed:
-                calculated_data[data["Task ID"]]["Track"] = len(parent_tracks[p_id])
-                parent_tracks[p_id].append(data["Original_Finish"])
+        # Solo agrupamos si pertenecen al MISMO padre. 
+        if calculated_data[task_id]["Parent Task ID"] != calculated_data[pred_id]["Parent Task ID"]:
+            return task_id
+            
+        # Búsqueda recursiva hacia atrás
+        return get_root_task(pred_id, visited)
+
+    for tid, data in calculated_data.items():
+        if data["Parent Task ID"]: # Solo aplicable a tareas hijas
+            root_id = get_root_task(tid)
+            calculated_data[tid]["Root_ID"] = root_id
+            
+            if root_id in calculated_data:
+                root_name = calculated_data[root_id]["Task"]
+                calculated_data[tid]["Track_Name"] = f"   ↳ Ruta: {root_name}"
+            else:
+                calculated_data[tid]["Track_Name"] = f"   ↳ Subtareas"
 
     # Formatear para graficar
     final_tasks = []
@@ -263,16 +269,21 @@ try:
         def get_sort_key(row_data):
             p_id = row_data["Parent Task ID"]
             t_id = row_data["Task ID"]
-            track = row_data.get("Track", 0)
             
             if p_id and p_id in calculated_data:
                 parent_start = calculated_data[p_id]["Original_Start"].timestamp()
-                # Agregamos el número de Track para que los ordene hacia abajo
-                return f"{parent_start}_1_{p_id}_{track:03d}" 
+                root_id = row_data.get("Root_ID", t_id)
+                # Obtenemos cuando empieza la ruta completa para ordenarlas cronológicamente
+                if root_id in calculated_data:
+                    root_start = calculated_data[root_id]["Original_Start"].timestamp()
+                else:
+                    root_start = row_data['Original_Start'].timestamp()
+                    
+                return f"{parent_start}_1_{root_start}_{root_id}" 
             elif t_id in padres_ids:
-                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}_000"
+                return f"{row_data['Original_Start'].timestamp()}_0_0_{t_id}"
             else:
-                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}_000"
+                return f"{row_data['Original_Start'].timestamp()}_0_0_{t_id}"
 
         final_df["Sort_Key"] = final_df.apply(get_sort_key, axis=1)
         final_df = final_df.sort_values(by=["Project", "Sort_Key", "Original_Start"])
@@ -280,15 +291,9 @@ try:
         def get_y_axis_name(row_data):
             p_id = row_data["Parent Task ID"]
             t_id = row_data["Task ID"]
-            track = row_data.get("Track", 0)
             
             if p_id and p_id in calculated_data:
-                nombre_padre = calculated_data[p_id]["Task"]
-                base_name = f"   ↳ Subtareas de {nombre_padre}"
-                # Si chocaron y se creó un track nuevo, le ponemos un identificador sutil
-                if track > 0:
-                    return f"{base_name} ({track + 1})"
-                return base_name
+                return row_data.get("Track_Name", f"   ↳ Subtareas")
             elif t_id in padres_ids:
                 return f"📂 {row_data['Task']}"
             else:
