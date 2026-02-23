@@ -38,7 +38,6 @@ try:
     df = conn.read(spreadsheet=SHEET_URL, worksheet=TAB_NAME, ttl=0)
     df = df.dropna(how="all") 
     
-    # Motor interno usando los nombres originales para no desconectar tu Google Sheet
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
             {"Task ID": "T1", "Parent Task ID": None, "Project Name": "Proyecto Alfa", "Task Name": "Fase de Desarrollo", "Depends On": None, "Duration (Days)": 1, "Start Date": hoy, "Horas Invertidas": 0, "Responsable(s)": "Equipo Tech", "Notas Extra": "", "Color": "Gris"},
@@ -78,7 +77,6 @@ except Exception as e:
 st.write("### 1. Edita el Calendario de Proyectos")
 
 # 3. Editor de Datos PRINCIPAL
-# Aquí aplicamos tu orden exacto
 orden_columnas = [
     "Task ID", 
     "Parent Task ID", 
@@ -98,7 +96,6 @@ edited_df = st.data_editor(
     num_rows="dynamic", 
     width="stretch",
     column_order=orden_columnas, 
-    # Aquí cambiamos los nombres visuales a lo que pediste sin alterar la base de datos
     column_config={
         "Task ID": st.column_config.TextColumn("Task ID", required=True),
         "Parent Task ID": st.column_config.TextColumn("Parent Task ID (Padre)"),
@@ -360,19 +357,47 @@ try:
     st.write("### 📊 Resumen del Portafolio")
     
     if not final_df.empty:
+        # === CÁLCULOS DEL RESUMEN ===
         fecha_inicio_global = final_df["Original_Start"].min()
         fecha_fin_global = final_df["Original_Finish"].max()
         
         dias_totales = (fecha_fin_global - fecha_inicio_global).days
         dias_restantes = max(0, (fecha_fin_global.date() - hoy).days)
-        tareas_unicas = final_df["Task Name"].nunique()
-        total_horas = final_df[final_df["Task ID"].apply(lambda x: x not in padres_ids)]["Horas Invertidas"].sum()
+        tareas_unicas = len([t for t, d in calculated_data.items() if t not in padres_ids])
+        total_horas = sum([d["Horas Invertidas"] for t, d in calculated_data.items() if t not in padres_ids])
         
-        col1, col2, col3, col4 = st.columns(4)
+        # Cálculos de Tareas y Proyectos Activos
+        tareas_activas = 0
+        proyectos_stats = {}
+        
+        for t_id, data in calculated_data.items():
+            o_start = data["Original_Start"].date()
+            o_finish = data["Original_Finish"].date()
+            
+            # Contar tareas activas (solo tareas hijas directas)
+            if t_id not in padres_ids:
+                if o_start <= hoy < o_finish:
+                    tareas_activas += 1
+                    
+            # Registrar inicios y fines de cada proyecto
+            proj = data["Project Name"]
+            if proj not in proyectos_stats:
+                proyectos_stats[proj] = {"inicio": o_start, "fin": o_finish}
+            else:
+                if o_start < proyectos_stats[proj]["inicio"]: proyectos_stats[proj]["inicio"] = o_start
+                if o_finish > proyectos_stats[proj]["fin"]: proyectos_stats[proj]["fin"] = o_finish
+                
+        # Contar cuántos proyectos están en su ventana de tiempo activa
+        proyectos_activos = sum(1 for p, dates in proyectos_stats.items() if dates["inicio"] <= hoy < dates["fin"])
+
+        # === DIBUJAR MÉTRICAS EN 6 COLUMNAS ===
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
         col1.metric("⏳ Duración Total", f"{dias_totales} días")
         col2.metric("📅 Días Restantes", f"{dias_restantes} días")
         col3.metric("📝 Total de Tareas", tareas_unicas)
         col4.metric("⏱️ Horas Totales", f"{total_horas} hrs")
+        col5.metric("🚀 Tareas Activas", tareas_activas)
+        col6.metric("📂 Proyectos Activos", proyectos_activos)
 
     st.write("### 2. Línea de Tiempo de Proyectos")
     
