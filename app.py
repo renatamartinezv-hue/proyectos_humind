@@ -183,7 +183,8 @@ try:
             "Original_Start": t_start,
             "Original_Finish": t_end,
             "Duration": t_duration,
-            "Dependency Info": dependency_text
+            "Dependency Info": dependency_text,
+            "Track": 0 # Track por defecto
         }
 
     # === SEGUNDA PASADA: Ajustar las Tareas Padre ===
@@ -206,6 +207,32 @@ try:
                     resps = set([h["Responsable(s)"] for h in hijos if h["Responsable(s)"]])
                     calculated_data[p_id]["Responsable(s)"] = ", ".join(resps)
 
+    # === TERCERA PASADA: Sistema Automático Anti-Choques (Tracks) para Hijas ===
+    parent_tracks = {}
+    # Ordenamos cronológicamente para ir acomodando las tareas
+    sorted_tasks_for_tracks = sorted(calculated_data.values(), key=lambda x: x["Original_Start"])
+    
+    for data in sorted_tasks_for_tracks:
+        p_id = data["Parent Task ID"]
+        if p_id and p_id in calculated_data:
+            if p_id not in parent_tracks:
+                parent_tracks[p_id] = []
+            
+            placed = False
+            # Buscar si cabe en algún renglón (track) existente de este Padre
+            for i, track_end in enumerate(parent_tracks[p_id]):
+                # Si el carril actual termina antes de que esta nueva tarea empiece, cabe perfecto.
+                if track_end < data["Original_Start"]: 
+                    calculated_data[data["Task ID"]]["Track"] = i
+                    parent_tracks[p_id][i] = data["Original_Finish"]
+                    placed = True
+                    break
+            
+            # Si no cabe en ningún renglón actual (choca con todas), creamos un renglón nuevo.
+            if not placed:
+                calculated_data[data["Task ID"]]["Track"] = len(parent_tracks[p_id])
+                parent_tracks[p_id].append(data["Original_Finish"])
+
     # Formatear para graficar
     final_tasks = []
     fecha_hoy_segura = pd.to_datetime(hoy)
@@ -215,7 +242,6 @@ try:
         o_finish = data["Original_Finish"]
         
         if o_start.date() < hoy and o_finish.date() > hoy:
-            # OCULTAMOS EL TEXTO EN LA MITAD PASADA CON "Hide_Label: True"
             final_tasks.append({**data, "Start": o_start, "Finish": fecha_hoy_segura, "Status": "Pasado", "Hide_Label": True})
             final_tasks.append({**data, "Start": fecha_hoy_segura, "Finish": o_finish, "Status": "Activo", "Hide_Label": False})
         elif o_finish.date() <= hoy:
@@ -237,14 +263,16 @@ try:
         def get_sort_key(row_data):
             p_id = row_data["Parent Task ID"]
             t_id = row_data["Task ID"]
+            track = row_data.get("Track", 0)
             
             if p_id and p_id in calculated_data:
                 parent_start = calculated_data[p_id]["Original_Start"].timestamp()
-                return f"{parent_start}_1_{p_id}" 
+                # Agregamos el número de Track para que los ordene hacia abajo
+                return f"{parent_start}_1_{p_id}_{track:03d}" 
             elif t_id in padres_ids:
-                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}"
+                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}_000"
             else:
-                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}"
+                return f"{row_data['Original_Start'].timestamp()}_0_{t_id}_000"
 
         final_df["Sort_Key"] = final_df.apply(get_sort_key, axis=1)
         final_df = final_df.sort_values(by=["Project", "Sort_Key", "Original_Start"])
@@ -252,10 +280,15 @@ try:
         def get_y_axis_name(row_data):
             p_id = row_data["Parent Task ID"]
             t_id = row_data["Task ID"]
+            track = row_data.get("Track", 0)
             
             if p_id and p_id in calculated_data:
                 nombre_padre = calculated_data[p_id]["Task"]
-                return f"   ↳ Subtareas de {nombre_padre}"
+                base_name = f"   ↳ Subtareas de {nombre_padre}"
+                # Si chocaron y se creó un track nuevo, le ponemos un identificador sutil
+                if track > 0:
+                    return f"{base_name} ({track + 1})"
+                return base_name
             elif t_id in padres_ids:
                 return f"📂 {row_data['Task']}"
             else:
@@ -266,9 +299,7 @@ try:
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
         final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
-        # === TEXTO DE LA ETIQUETA CORREGIDO ===
         def generar_label(x):
-            # Solamente ocultamos el texto si es la mitad opaca del efecto "HOY"
             if x.get("Hide_Label", False):
                 return ""
                 
