@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go 
+import plotly.graph_objects as go
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
@@ -133,7 +133,11 @@ try:
         t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
         t_task = str(row["Task Name"]).strip()
         t_resp = str(row.get("Responsable(s)", "")).strip() if pd.notna(row.get("Responsable(s)")) else ""
-        t_horas = float(row.get("Horas Invertidas", 0))
+        
+        # CORRECCIÓN AQUÍ: Manejamos el caso donde "Horas Invertidas" pueda ser None o vacío
+        raw_horas = row.get("Horas Invertidas", 0)
+        t_horas = float(raw_horas) if pd.notna(raw_horas) and str(raw_horas).strip() != "" else 0.0
+        
         t_notas = str(row.get("Notas Extra", "")).strip() if pd.notna(row.get("Notas Extra")) else ""
         t_color_raw = str(row.get("Color", "Por defecto")).strip()
         
@@ -617,5 +621,3 @@ except KeyError as e:
     st.error(f"**Error de Dependencia:** Revisa que el ID de la tarea a la que estás apuntando exista. Detalles: {e}")
 except Exception as e:
     st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
-
-
