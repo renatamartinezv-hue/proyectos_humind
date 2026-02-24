@@ -223,20 +223,21 @@ try:
             if manual_s and manual_e and manual_e < manual_s:
                 manual_e = manual_s 
                 
+            # Calcular la duración que el usuario desea que tenga la tarea (basado en sus fechas manuales)
             if manual_s and manual_e:
-                dur_dias = (manual_e - manual_s).days + 1
+                dur_dias = max(1, (manual_e - manual_s).days + 1)
             else:
                 dur_dias = 1
                 
+            # === AQUÍ ESTÁ LA MAGIA Y CORRECCIÓN ===
             if dep_id and dep_id in calculated_data:
                 _, dep_f = compute_dates(dep_id)
-                s = dep_f 
-                if manual_s and manual_s > s:
-                    s = manual_s
+                s = dep_f # SE PEGA EXACTAMENTE AL FINAL DE LA OTRA. Ignora la fecha de inicio manual.
                 calculated_data[tid]["Dependency Info"] = f"Depende de: {dep_id} 🔗"
             else:
                 s = manual_s if manual_s else default_start
                 calculated_data[tid]["Dependency Info"] = "Independiente 🟢"
+            # =======================================
                 
             disp_e = s + pd.Timedelta(days=dur_dias - 1)
             f = s + pd.Timedelta(days=dur_dias)
@@ -293,7 +294,7 @@ if st.button("💾 Guardar Cambios en Google Sheets"):
             df_to_save = df_to_save.drop(columns=["Duration (Days)"])
 
         conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=df_to_save)
-        st.success("¡Base de datos actualizada! Las fechas se recalcularon y ajustaron.")
+        st.success("¡Base de datos actualizada! Las fechas se recalcularon y ajustaron de forma estricta.")
         st.cache_data.clear() 
     except Exception as e:
         st.error(f"Error al guardar: {e}")
@@ -343,13 +344,9 @@ try:
 
         final_df["Sort_Key"] = final_df.apply(get_sort_key, axis=1)
         
-        # === NUEVO: ORDEN CRONOLÓGICO DE PROYECTOS ===
         project_starts = final_df.groupby("Project Name")["Original_Start"].min().to_dict()
         final_df["Project_Min_Start"] = final_df["Project Name"].map(project_starts)
-        
-        # Ahora ordenamos primero por la fecha del proyecto, luego por su nombre, luego por jerarquía y fecha
         final_df = final_df.sort_values(by=["Project_Min_Start", "Project Name", "Sort_Key", "Original_Start"])
-        # ===============================================
         
         def get_y_axis_name(row_data):
             p_id = row_data["Parent Task ID"]
@@ -383,7 +380,6 @@ try:
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
         project_default_colors = {}
-        # Asignar color por proyecto manteniendo el orden cronológico
         for p in final_df["Project Name"].unique():
             project_default_colors[p] = pastel_colors[color_idx % len(pastel_colors)]
             color_idx += 1
