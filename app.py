@@ -7,10 +7,10 @@ from streamlit_gsheets import GSheetsConnection
 
 # Configuración de la página
 st.set_page_config(layout="wide")
-st.title("Diagnóstico 25 Empresas")
+st.title("Gantt Interactivo Multientrega")
 
 # === 1. CONFIGURA TU GOOGLE SHEET AQUÍ ===
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1O8aZdaPzIiYDreFA_9yRdfjOd9oMRy2TpAnl3mDwTBY/edit" 
+SHEET_URL = "PASTE_YOUR_LONG_URL_HERE" 
 TAB_NAME = "Sheet1" 
 # ============================================
 
@@ -506,10 +506,10 @@ try:
             x=hitos_x,
             y=[hitos_y_proy, hitos_y_tarea],
             mode='markers+text',
-            marker=dict(symbol='diamond', size=16, color='#D30000', line=dict(color='black', width=1.5)),
-            text=["Fin"] * len(hitos_x),
+            marker=dict(symbol='diamond', size=16, color='#FFD700', line=dict(color='black', width=1.5)),
+            text=[" 🏁 Fin"] * len(hitos_x),
             textposition="middle right",
-            textfont=dict(color="black", size=10, family="Arial"),
+            textfont=dict(color="black", size=13, family="Arial Black"),
             hoverinfo='skip',
             showlegend=False
         ))
@@ -617,5 +617,3 @@ except KeyError as e:
     st.error(f"**Error de Dependencia:** Revisa que el ID de la tarea a la que estás apuntando exista. Detalles: {e}")
 except Exception as e:
     st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
-
-
