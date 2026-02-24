@@ -134,7 +134,6 @@ try:
         t_task = str(row["Task Name"]).strip()
         t_resp = str(row.get("Responsable(s)", "")).strip() if pd.notna(row.get("Responsable(s)")) else ""
         
-        # CORRECCIÓN AQUÍ: Manejamos el caso donde "Horas Invertidas" pueda ser None o vacío
         raw_horas = row.get("Horas Invertidas", 0)
         t_horas = float(raw_horas) if pd.notna(raw_horas) and str(raw_horas).strip() != "" else 0.0
         
@@ -353,9 +352,8 @@ try:
 
         final_df["Llave_Secreta"] = final_df["Project Name"].astype(str) + "|||" + final_df.apply(get_y_axis_name, axis=1)
         
-        # Strings para etiquetas visuales
+        # === TEXTO VISUAL DENTRO DE LA BARRA ===
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
-        # El display finish es 1 día menos para que cuadre con la logica humana (ej. empieza 1 y dura 1 dia -> termina 1)
         final_df["Display_Finish_str"] = (final_df["Original_Finish"] - pd.Timedelta(days=1)).dt.strftime('%d %b')
         
         def generar_label(x):
@@ -368,6 +366,29 @@ try:
             )
 
         final_df["Label"] = final_df.apply(generar_label, axis=1)
+
+        # === TEXTO DEL HOVER (EL POPUP AL PASAR EL MOUSE) ===
+        nombres_tareas = {t_id: data["Task Name"] for t_id, data in calculated_data.items()}
+
+        def generar_hover(x):
+            dep_id = x.get("Depends_On_ID", "")
+            if dep_id and dep_id in nombres_tareas:
+                dep_text = nombres_tareas[dep_id]
+            elif x.get("Dependency Info", "") == "Tarea Padre 📂":
+                dep_text = "N/A (Es tarea padre)"
+            else:
+                dep_text = "Ninguna"
+
+            return (
+                f"<b>{x['Project Name']}</b><br>"
+                f"{x['Orig_Start_str']} - {x['Display_Finish_str']} - {x['Duration']} días transcurridos<br>"
+                f"Responsable: {x['Responsable(s)']}<br>"
+                f"Horas transcurridas: {x['Horas Invertidas']}<br>"
+                f"Depende de: {dep_text}"
+            )
+            
+        final_df["Hover_Text"] = final_df.apply(generar_hover, axis=1)
+        
         final_df["Color_Key"] = final_df.apply(lambda row: f"{row['Task ID']} (Completado)" if row["Status"] == "Pasado" else row["Task ID"], axis=1)
         
         color_map = {} 
@@ -456,23 +477,16 @@ try:
             y="Llave_Secreta", 
             color="Color_Key", 
             color_discrete_map=color_map, 
-            text="Label",     
-            hover_data={
-                "Color_Key": False,
-                "Llave_Secreta": False,
-                "Plot_Finish": False,
-                "Project Name": True,
-                "Parent Task ID": True,
-                "Responsable(s)": True,
-                "Dependency Info": True
-            },
+            text="Label",
+            custom_data=["Hover_Text"] # Agregamos la columna que creamos para el tooltip
         )
         
         fig.update_traces(
             textfont_size=12, 
             textfont_color="black",
             textposition='inside', 
-            insidetextanchor='middle'
+            insidetextanchor='middle',
+            hovertemplate="%{customdata[0]}<extra></extra>" # Inyecta el texto limpio sin la información default de Plotly
         )
         
         for trace in fig.data:
