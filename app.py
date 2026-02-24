@@ -623,4 +623,4 @@ try:
                 "Fin": disp_finish.strftime("%d/%m/%Y"), 
                 "Duración": f"{data['Duration']} días",
                 "Estado": status,
-                "Dependencia": data["
+                "Dependencia": data["Dependencia"],
