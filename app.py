@@ -31,7 +31,7 @@ opciones_color = list(COLOR_MAP_ESP.keys())
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 hoy = datetime.today().date()
-default_start = pd.to_datetime(hoy)
+default_start = pd.Timestamp(hoy)
 
 # 2. Lógica de Base de Datos y Limpieza
 try:
@@ -60,7 +60,7 @@ try:
             
         for col in ["Task ID", "Parent Task ID", "Project Name", "Task Name", "Responsable(s)", "Notas Extra", "Depends On"]:
             if col in df.columns:
-                df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], None)
+                df[col] = df[col].astype(str).replace(["nan", "None", "NaN", ""], None)
                 
         if "Horas Invertidas" in df.columns:
             df["Horas Invertidas"] = pd.to_numeric(df["Horas Invertidas"], errors='coerce').fillna(0)
@@ -122,6 +122,7 @@ edited_df = st.data_editor(
 calculated_data = {}
 
 try:
+    # --- PRIMERA FASE: Mapeo de datos limpios ---
     for index, row in edited_df.iterrows():
         if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() in ["None", ""]:
             continue
@@ -140,7 +141,12 @@ try:
         t_pre_raw = row["Depends On"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) not in ["None", "nan", "NaN", ""] else ""
         
-        t_manual_start = pd.to_datetime(row["Start Date"]) if pd.notna(row["Start Date"]) and row["Start Date"] != "" else None
+        # FIX: Evitar que fechas vacías se conviertan en 'NaT' y rompan el código
+        raw_start = row.get("Start Date")
+        if pd.notna(raw_start) and str(raw_start).strip() not in ["", "None", "nan", "NaT"]:
+            t_manual_start = pd.to_datetime(raw_start)
+        else:
+            t_manual_start = None
         
         try:
             t_duration = int(row["Duration (Days)"])
@@ -167,12 +173,28 @@ try:
 
     visited = set()
     resolving = set()
+
+    # Función auxiliar para que tareas hijas hereden fechas si el Padre tiene dependencias
+    def get_inherited_start(tid):
+        data = calculated_data[tid]
+        p_id = data["Parent Task ID"]
+        if p_id and p_id in calculated_data:
+            parent_data = calculated_data[p_id]
+            p_dep = parent_data["Depends_On_ID"]
+            if p_dep and p_dep in calculated_data:
+                _, dep_f = compute_dates(p_dep)
+                return dep_f
+            return get_inherited_start(p_id)
+        return None
     
+    # --- SEGUNDA FASE: Recursión de fechas ---
     def compute_dates(tid):
         if tid in visited:
             return calculated_data[tid]["Original_Start"], calculated_data[tid]["Original_Finish"]
+        
         if tid in resolving:
-            s = calculated_data[tid]["Manual_Start"] if calculated_data[tid]["Manual_Start"] else default_start
+            # Detecta ciclo: rompe el bucle usando fecha default
+            s = calculated_data[tid]["Manual_Start"] if calculated_data[tid]["Manual_Start"] is not None else default_start
             dur = calculated_data[tid]["Manual_Duration"]
             return s, s + pd.Timedelta(days=dur)
             
@@ -219,12 +241,20 @@ try:
             dur = data["Manual_Duration"]
             
             if dep_id and dep_id in calculated_data:
+                # Prioridad 1: Su propia dependencia
                 _, dep_f = compute_dates(dep_id)
-                s = dep_f # INICIA EXACTAMENTE AL TERMINAR SU DEPENDENCIA
+                s = dep_f 
                 calculated_data[tid]["Dependency Info"] = f"Depende de: {dep_id} 🔗"
             else:
-                s = manual_s if manual_s else default_start
-                calculated_data[tid]["Dependency Info"] = "Independiente 🟢"
+                # Prioridad 2: Dependencia heredada del padre
+                inherited_s = get_inherited_start(tid)
+                if inherited_s is not None:
+                    s = inherited_s
+                    calculated_data[tid]["Dependency Info"] = "Heredado del Padre 📂"
+                else:
+                    # Prioridad 3: Manual o Defecto
+                    s = manual_s if manual_s is not None else default_start
+                    calculated_data[tid]["Dependency Info"] = "Independiente 🟢"
                 
             f = s + pd.Timedelta(days=dur)
             
@@ -270,12 +300,12 @@ if st.button("💾 Guardar Cambios en Google Sheets"):
         for index, row in df_to_save.iterrows():
             t_id = str(row["Task ID"]).strip()
             if t_id in calculated_data:
+                # Guardamos la fecha correcta procesada
                 df_to_save.at[index, "Start Date"] = calculated_data[t_id]["Original_Start"].date()
                 if calculated_data[t_id]["Dependency Info"] == "Tarea Padre 📂":
                     df_to_save.at[index, "Duration (Days)"] = calculated_data[t_id]["Duration"]
                     df_to_save.at[index, "Horas Invertidas"] = calculated_data[t_id]["Horas Invertidas"]
                     
-        # Limpiar End Date si quedo del intento anterior
         if "End Date" in df_to_save.columns:
             df_to_save = df_to_save.drop(columns=["End Date"])
 
@@ -304,7 +334,6 @@ try:
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
-        # Generar espacio visual restando unas horitas al grafico (solo visual)
         def adjust_finish_for_plot(row):
             if row["Finish"] == row["Original_Finish"]:
                 return row["Finish"] - pd.Timedelta(hours=3)
@@ -331,7 +360,6 @@ try:
 
         final_df["Sort_Key"] = final_df.apply(get_sort_key, axis=1)
         
-        # Orden Cronológico de Proyectos
         project_starts = final_df.groupby("Project Name")["Original_Start"].min().to_dict()
         final_df["Project_Min_Start"] = final_df["Project Name"].map(project_starts)
         final_df = final_df.sort_values(by=["Project_Min_Start", "Project Name", "Sort_Key", "Original_Start"])
@@ -349,9 +377,7 @@ try:
 
         final_df["Llave_Secreta"] = final_df["Project Name"].astype(str) + "|||" + final_df.apply(get_y_axis_name, axis=1)
         
-        # Strings para etiquetas visuales
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
-        # El display finish es 1 día menos para que cuadre con la logica humana (ej. empieza 1 y dura 1 dia -> termina 1)
         final_df["Display_Finish_str"] = (final_df["Original_Finish"] - pd.Timedelta(days=1)).dt.strftime('%d %b')
         
         def generar_label(x):
@@ -597,25 +623,4 @@ try:
                 "Fin": disp_finish.strftime("%d/%m/%Y"), 
                 "Duración": f"{data['Duration']} días",
                 "Estado": status,
-                "Dependencia": data["Dependency Info"].replace("🔗", "").replace("🟢", "").replace("📂", "").strip(),
-                "Notas Extra": data["Notas Extra"]
-            })
-        
-        df_table = pd.DataFrame(table_data)
-        
-        st.dataframe(df_table, use_container_width=True, hide_index=True)
-        
-        csv = df_table.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Descargar Reporte Completo (Excel / CSV)",
-            data=csv,
-            file_name='reporte_cronograma.csv',
-            mime='text/csv',
-        )
-
-except KeyError as e:
-    st.error(f"**Error de Dependencia:** Revisa que el ID de la tarea a la que estás apuntando exista. Detalles: {e}")
-except Exception as e:
-    st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
-
-
+                "Dependencia": data["
