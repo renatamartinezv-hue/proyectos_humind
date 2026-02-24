@@ -31,7 +31,7 @@ opciones_color = list(COLOR_MAP_ESP.keys())
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 hoy = datetime.today().date()
-default_start = pd.Timestamp(hoy)
+default_start = pd.to_datetime(hoy)
 
 # 2. Lógica de Base de Datos y Limpieza
 try:
@@ -40,36 +40,33 @@ try:
     
     if df.empty:
         st.session_state['tasks'] = pd.DataFrame([
-            {"Task ID": "T1", "Parent Task ID": None, "Project Name": "Proyecto Alfa", "Task Name": "Fase de Desarrollo", "Depends On": None, "Duration (Days)": 7, "Start Date": hoy, "Horas Invertidas": 0, "Responsable(s)": "Equipo Tech", "Notas Extra": "", "Color": "Gris"},
-            {"Task ID": "T2", "Parent Task ID": "T1", "Project Name": "Proyecto Alfa", "Task Name": "Frontend", "Depends On": None, "Duration (Days)": 3, "Start Date": hoy, "Horas Invertidas": 40, "Responsable(s)": "Carlos M.", "Notas Extra": "", "Color": "Azul"},
-            {"Task ID": "T3", "Parent Task ID": "T1", "Project Name": "Proyecto Alfa", "Task Name": "Backend", "Depends On": "T2", "Duration (Days)": 4, "Start Date": None, "Horas Invertidas": 35, "Responsable(s)": "Ana P.", "Notas Extra": "", "Color": "Rojo"},
-            {"Task ID": "T4", "Parent Task ID": None, "Project Name": "Proyecto Beta", "Task Name": "Lanzamiento", "Depends On": None, "Duration (Days)": 5, "Start Date": hoy + pd.Timedelta(days=10), "Horas Invertidas": 15, "Responsable(s)": "Dirección", "Notas Extra": "", "Color": "Verde"},
-            {"Task ID": "T5", "Parent Task ID": None, "Project Name": "Proyecto Beta", "Task Name": "Reunión Flash", "Depends On": None, "Duration (Days)": 1, "Start Date": hoy + pd.Timedelta(days=10), "Horas Invertidas": 2, "Responsable(s)": "Todos", "Notas Extra": "Tarea de 1 solo día", "Color": "Amarillo"},
+            {"ID Fase": "T1", "Parent ID Fase": None, "Número de Fase": "Proyecto Alfa", "Nombre de Tarea": "Fase de Desarrollo", "Depende de (ID Fase)": None, "Duración (días)": 1, "Fecha de Inicio (solo si independiente)": hoy, "Horas Invertidas": 0, "Responsable(s)": "Equipo Tech", "Notas Extra": "", "Color": "Gris"},
+            {"ID Fase": "T2", "Parent ID Fase": "T1", "Número de Fase": "Proyecto Alfa", "Nombre de Tarea": "Frontend", "Depende de (ID Fase)": None, "Duración (días)": 3, "Fecha de Inicio (solo si independiente)": hoy, "Horas Invertidas": 40, "Responsable(s)": "Carlos M.", "Notas Extra": "", "Color": "Azul"},
+            {"ID Fase": "T3", "Parent ID Fase": "T1", "Número de Fase": "Proyecto Alfa", "Nombre de Tarea": "Backend", "Depende de (ID Fase)": "T2", "Duración (días)": 4, "Fecha de Inicio (solo si independiente)": None, "Horas Invertidas": 35, "Responsable(s)": "Ana P.", "Notas Extra": "", "Color": "Rojo"},
+            {"ID Fase": "T4", "Parent ID Fase": None, "Número de Fase": "Proyecto Beta", "Nombre de Tarea": "Lanzamiento", "Depende de (ID Fase)": None, "Duración (días)": 5, "Fecha de Inicio (solo si independiente)": hoy, "Horas Invertidas": 15, "Responsable(s)": "Dirección", "Notas Extra": "", "Color": "Verde"},
         ])
     else:
-        for col in ["Notas Extra", "Parent Task ID", "Responsable(s)"]:
+        for col in ["Notas Extra", "Parent ID Fase", "Responsable(s)"]:
             if col not in df.columns: df[col] = ""
             
         if "Horas Invertidas" not in df.columns: df["Horas Invertidas"] = 0
-        if "Duration (Days)" not in df.columns: df["Duration (Days)"] = 1
-        
         if "Color" not in df.columns:
             df["Color"] = "Por defecto"
         else:
             df["Color"] = df["Color"].apply(lambda x: x if x in opciones_color else "Por defecto")
             
-        for col in ["Task ID", "Parent Task ID", "Project Name", "Task Name", "Responsable(s)", "Notas Extra", "Depends On"]:
+        for col in ["ID Fase", "Parent ID Fase", "Número de Fase", "Nombre de Tarea", "Responsable(s)", "Notas Extra", "Depende de (ID Fase)"]:
             if col in df.columns:
-                df[col] = df[col].astype(str).replace(["nan", "None", "NaN", ""], None)
+                df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], None)
                 
+        if "Duración (días)" in df.columns:
+            df["Duración (días)"] = pd.to_numeric(df["Duración (días)"], errors='coerce').fillna(1).astype(int)
+            
         if "Horas Invertidas" in df.columns:
             df["Horas Invertidas"] = pd.to_numeric(df["Horas Invertidas"], errors='coerce').fillna(0)
             
-        if "Duration (Days)" in df.columns:
-            df["Duration (Days)"] = pd.to_numeric(df["Duration (Days)"], errors='coerce').fillna(1).astype(int)
-            
-        if "Start Date" in df.columns:
-            df["Start Date"] = pd.to_datetime(df["Start Date"], errors='coerce').dt.date
+        if "Fecha de Inicio (solo si independiente)" in df.columns:
+            df["Fecha de Inicio (solo si independiente)"] = pd.to_datetime(df["Fecha de Inicio (solo si independiente)"], errors='coerce').dt.date
             
         st.session_state['tasks'] = df
 
@@ -81,13 +78,13 @@ st.write("### 1. Edita el Calendario de Proyectos")
 
 # 3. Editor de Datos PRINCIPAL
 orden_columnas = [
-    "Task ID", 
-    "Parent Task ID", 
-    "Project Name", 
-    "Task Name", 
-    "Depends On", 
-    "Duration (Days)", 
-    "Start Date",
+    "ID Fase", 
+    "Parent ID Fase", 
+    "Número de Fase", 
+    "Nombre de Tarea", 
+    "Depende de (ID Fase)", 
+    "Duración (días)", 
+    "Fecha de Inicio (solo si independiente)",
     "Horas Invertidas",
     "Responsable(s)",
     "Notas Extra", 
@@ -100,13 +97,13 @@ edited_df = st.data_editor(
     width="stretch",
     column_order=orden_columnas, 
     column_config={
-        "Task ID": st.column_config.TextColumn("Task ID", required=True),
-        "Parent Task ID": st.column_config.TextColumn("Parent Task ID (Padre)"),
-        "Project Name": st.column_config.TextColumn("Project Name", required=True), 
-        "Task Name": st.column_config.TextColumn("Task Name", required=True),
-        "Depends On": st.column_config.TextColumn("Depends On (Task ID)"),
-        "Duration (Days)": st.column_config.NumberColumn("Duración (Días)", min_value=1, step=1, required=True),
-        "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
+        "ID Fase": st.column_config.TextColumn("ID Fase", required=True),
+        "Parent ID Fase": st.column_config.TextColumn("Parent ID Fase (Padre)"),
+        "Número de Fase": st.column_config.TextColumn("Número de Fase", required=True), 
+        "Nombre de Tarea": st.column_config.TextColumn("Nombre de Tarea", required=True),
+        "Depende de (ID Fase)": st.column_config.TextColumn("Depende de (ID Fase) (ID Fase)"),
+        "Duración (días)": st.column_config.NumberColumn("Duración (días)", min_value=1, step=1, required=True),
+        "Fecha de Inicio (solo si independiente)": st.column_config.DateColumn("Fecha de Inicio (solo si independiente) (if independent)", format="YYYY-MM-DD"),
         "Horas Invertidas": st.column_config.NumberColumn("Horas Invertidas", min_value=0),
         "Responsable(s)": st.column_config.TextColumn("Responsables"),
         "Notas Extra": st.column_config.TextColumn("Notas Extra"), 
@@ -118,204 +115,124 @@ edited_df = st.data_editor(
     }
 )
 
-# === 4. LÓGICA DE CÁLCULO DINÁMICO ===
+if st.button("💾 Guardar Cambios en Google Sheets"):
+    try:
+        conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=edited_df)
+        st.success("¡Base de datos actualizada con éxito!")
+        st.cache_data.clear() 
+    except Exception as e:
+        st.error(f"Error al guardar: {e}")
+
 calculated_data = {}
 
 try:
-    # --- PRIMERA FASE: Mapeo de datos limpios ---
+    # === PRIMERA PASADA: Cálculos Base ===
     for index, row in edited_df.iterrows():
-        if pd.isna(row["Task ID"]) or str(row["Task ID"]).strip() in ["None", ""]:
+        if pd.isna(row["ID Fase"]) or str(row["ID Fase"]).strip() in ["None", ""]:
             continue
             
-        t_id = str(row["Task ID"]).strip()
-        t_parent_raw = row.get("Parent Task ID")
+        t_id = str(row["ID Fase"]).strip()
+        t_parent_raw = row.get("Parent ID Fase")
         t_parent = str(t_parent_raw).strip() if pd.notna(t_parent_raw) and str(t_parent_raw) not in ["None", "nan", "NaN", ""] else None
         
-        t_project = str(row["Project Name"]).strip() if pd.notna(row["Project Name"]) and str(row["Project Name"]) != "None" else "Sin Proyecto"
-        t_task = str(row["Task Name"]).strip()
+        t_project = str(row["Número de Fase"]).strip() if pd.notna(row["Número de Fase"]) and str(row["Número de Fase"]) != "None" else "Sin Proyecto"
+        t_task = str(row["Nombre de Tarea"]).strip()
         t_resp = str(row.get("Responsable(s)", "")).strip() if pd.notna(row.get("Responsable(s)")) else ""
         t_horas = float(row.get("Horas Invertidas", 0))
         t_notas = str(row.get("Notas Extra", "")).strip() if pd.notna(row.get("Notas Extra")) else ""
         t_color_raw = str(row.get("Color", "Por defecto")).strip()
         
-        t_pre_raw = row["Depends On"]
+        t_pre_raw = row["Depende de (ID Fase)"]
         t_pre = str(t_pre_raw).strip() if pd.notna(t_pre_raw) and str(t_pre_raw) not in ["None", "nan", "NaN", ""] else ""
         
-        # FIX: Evitar que fechas vacías se conviertan en 'NaT' y rompan el código
-        raw_start = row.get("Start Date")
-        if pd.notna(raw_start) and str(raw_start).strip() not in ["", "None", "nan", "NaT"]:
-            t_manual_start = pd.to_datetime(raw_start)
-        else:
-            t_manual_start = None
-        
         try:
-            t_duration = int(row["Duration (Days)"])
+            t_duration = int(row["Duración (días)"])
         except (ValueError, TypeError):
             t_duration = 1
             
+        t_manual_start = pd.to_datetime(row["Fecha de Inicio (solo si independiente)"]) if pd.notna(row["Fecha de Inicio (solo si independiente)"]) and row["Fecha de Inicio (solo si independiente)"] != "" else None
+        
+        if t_pre == "":
+            dependency_text = "Independiente 🟢"
+            t_start = t_manual_start if t_manual_start is not None else default_start
+        else:
+            dependency_text = f"Depende de: {t_pre} 🔗"
+            if t_pre in calculated_data:
+                earliest_start = calculated_data[t_pre]["Original_Finish"] 
+            else:
+                earliest_start = default_start 
+            
+            t_start = t_manual_start if t_manual_start is not None and t_manual_start > earliest_start else earliest_start
+        
+        t_start = pd.to_datetime(t_start)
+        t_end = t_start + pd.Timedelta(days=t_duration)
+        
         calculated_data[t_id] = {
-            "Task ID": t_id,
-            "Parent Task ID": t_parent,
-            "Project Name": t_project,
-            "Task Name": t_task,
+            "ID Fase": t_id,
+            "Parent ID Fase": t_parent,
+            "Número de Fase": t_project,
+            "Nombre de Tarea": t_task,
             "Responsable(s)": t_resp,
             "Horas Invertidas": t_horas,
             "Notas Extra": t_notas,
             "Color_Raw": t_color_raw, 
-            "Manual_Start": t_manual_start,
-            "Manual_Duration": max(1, t_duration),
+            "Original_Start": t_start,
+            "Original_Finish": t_end,
+            "Duration": t_duration,
             "Depends_On_ID": t_pre, 
-            "Dependency Info": "",
-            "Original_Start": None,
-            "Original_Finish": None,
-            "Duration": 0
+            "Dependency Info": dependency_text
         }
 
-    visited = set()
-    resolving = set()
-
-    # Función auxiliar para que tareas hijas hereden fechas si el Padre tiene dependencias
-    def get_inherited_start(tid):
-        data = calculated_data[tid]
-        p_id = data["Parent Task ID"]
-        if p_id and p_id in calculated_data:
-            parent_data = calculated_data[p_id]
-            p_dep = parent_data["Depends_On_ID"]
-            if p_dep and p_dep in calculated_data:
-                _, dep_f = compute_dates(p_dep)
-                return dep_f
-            return get_inherited_start(p_id)
-        return None
+    # === SEGUNDA PASADA: Ajustar las Tareas Padre ===
+    padres_ids = set([data["Parent ID Fase"] for t_id, data in calculated_data.items() if data["Parent ID Fase"]])
     
-    # --- SEGUNDA FASE: Recursión de fechas ---
-    def compute_dates(tid):
-        if tid in visited:
-            return calculated_data[tid]["Original_Start"], calculated_data[tid]["Original_Finish"]
-        
-        if tid in resolving:
-            # Detecta ciclo: rompe el bucle usando fecha default
-            s = calculated_data[tid]["Manual_Start"] if calculated_data[tid]["Manual_Start"] is not None else default_start
-            dur = calculated_data[tid]["Manual_Duration"]
-            return s, s + pd.Timedelta(days=dur)
-            
-        resolving.add(tid)
-        data = calculated_data[tid]
-        
-        hijos = [h_id for h_id, h_data in calculated_data.items() if h_data["Parent Task ID"] == tid]
-        
-        if hijos:
-            # === TAREA PADRE ===
-            min_s, max_f = None, None
-            horas_totales = 0
-            resps = set()
-            
-            for h in hijos:
-                c_s, c_f = compute_dates(h)
+    for p_id in padres_ids:
+        if p_id in calculated_data:
+            hijos = [data for t_id, data in calculated_data.items() if data["Parent ID Fase"] == p_id]
+            if hijos:
+                min_start = min([h["Original_Start"] for h in hijos])
+                max_finish = max([h["Original_Finish"] for h in hijos])
                 
-                if min_s is None or c_s < min_s: min_s = c_s
-                if max_f is None or c_f > max_f: max_f = c_f
+                calculated_data[p_id]["Original_Start"] = min_start
+                calculated_data[p_id]["Original_Finish"] = max_finish
+                calculated_data[p_id]["Duration"] = (max_finish - min_start).days
+                calculated_data[p_id]["Dependency Info"] = "Tarea Padre 📂"
+                calculated_data[p_id]["Horas Invertidas"] = sum([h["Horas Invertidas"] for h in hijos])
                 
-                horas_totales += calculated_data[h]["Horas Invertidas"]
-                if calculated_data[h]["Responsable(s)"]:
-                    for r in str(calculated_data[h]["Responsable(s)"]).split(","):
-                        if r.strip(): resps.add(r.strip())
-            
-            s = min_s if min_s else default_start
-            f = max_f if max_f else (s + pd.Timedelta(days=1))
-            dur = max(1, (f - s).days)
-            
-            calculated_data[tid]["Original_Start"] = s
-            calculated_data[tid]["Original_Finish"] = f
-            calculated_data[tid]["Duration"] = dur
-            calculated_data[tid]["Horas Invertidas"] = horas_totales
-            
-            if not data["Responsable(s)"]:
-                calculated_data[tid]["Responsable(s)"] = ", ".join(list(resps))
-                
-            calculated_data[tid]["Dependency Info"] = "Tarea Padre 📂"
-            
-        else:
-            # === TAREA HIJA / INDEPENDIENTE ===
-            dep_id = data["Depends_On_ID"]
-            manual_s = data["Manual_Start"]
-            dur = data["Manual_Duration"]
-            
-            if dep_id and dep_id in calculated_data:
-                # Prioridad 1: Su propia dependencia
-                _, dep_f = compute_dates(dep_id)
-                s = dep_f 
-                calculated_data[tid]["Dependency Info"] = f"Depende de: {dep_id} 🔗"
-            else:
-                # Prioridad 2: Dependencia heredada del padre
-                inherited_s = get_inherited_start(tid)
-                if inherited_s is not None:
-                    s = inherited_s
-                    calculated_data[tid]["Dependency Info"] = "Heredado del Padre 📂"
-                else:
-                    # Prioridad 3: Manual o Defecto
-                    s = manual_s if manual_s is not None else default_start
-                    calculated_data[tid]["Dependency Info"] = "Independiente 🟢"
-                
-            f = s + pd.Timedelta(days=dur)
-            
-            calculated_data[tid]["Original_Start"] = s
-            calculated_data[tid]["Original_Finish"] = f
-            calculated_data[tid]["Duration"] = dur
-            
-        resolving.remove(tid)
-        visited.add(tid)
-        return calculated_data[tid]["Original_Start"], calculated_data[tid]["Original_Finish"]
-        
-    for tid in calculated_data:
-        compute_dates(tid)
-        
-    padres_ids = set([data["Parent Task ID"] for t_id, data in calculated_data.items() if data["Parent Task ID"]])
+                if not calculated_data[p_id]["Responsable(s)"]:
+                    resps = set([h["Responsable(s)"] for h in hijos if h["Responsable(s)"]])
+                    calculated_data[p_id]["Responsable(s)"] = ", ".join(resps)
 
-    def get_root_task(task_id, visited_nodes=None):
-        if visited_nodes is None: visited_nodes = set()
-        if task_id in visited_nodes: return task_id 
-        visited_nodes.add(task_id)
-        if task_id not in calculated_data: return task_id
+    # === TERCERA PASADA: Cadenas Visuales (Rutas de Dependencia) ===
+    def get_root_task(task_id, visited=None):
+        if visited is None: visited = set()
+        if task_id in visited: return task_id 
+        visited.add(task_id)
+        
+        if task_id not in calculated_data:
+            return task_id
+            
         pred_id = calculated_data[task_id].get("Depends_On_ID", "")
-        if not pred_id or pred_id not in calculated_data: return task_id
-        if calculated_data[task_id]["Parent Task ID"] != calculated_data[pred_id]["Parent Task ID"]: return task_id
-        return get_root_task(pred_id, visited_nodes)
+        if not pred_id or pred_id not in calculated_data:
+            return task_id
+            
+        if calculated_data[task_id]["Parent ID Fase"] != calculated_data[pred_id]["Parent ID Fase"]:
+            return task_id
+            
+        return get_root_task(pred_id, visited)
 
     for tid, data in calculated_data.items():
-        if data["Parent Task ID"]: 
+        if data["Parent ID Fase"]: 
             root_id = get_root_task(tid)
             calculated_data[tid]["Root_ID"] = root_id
+            
             if root_id in calculated_data:
-                root_name = calculated_data[root_id]["Task Name"]
+                root_name = calculated_data[root_id]["Nombre de Tarea"]
                 calculated_data[tid]["Track_Name"] = f"   ↳ Ruta: {root_name}"
             else:
                 calculated_data[tid]["Track_Name"] = f"   ↳ Subtareas"
 
-except Exception as e:
-    st.error(f"Error procesando relaciones: {e}")
-
-if st.button("💾 Guardar Cambios en Google Sheets"):
-    try:
-        df_to_save = edited_df.copy()
-        for index, row in df_to_save.iterrows():
-            t_id = str(row["Task ID"]).strip()
-            if t_id in calculated_data:
-                # Guardamos la fecha correcta procesada
-                df_to_save.at[index, "Start Date"] = calculated_data[t_id]["Original_Start"].date()
-                if calculated_data[t_id]["Dependency Info"] == "Tarea Padre 📂":
-                    df_to_save.at[index, "Duration (Days)"] = calculated_data[t_id]["Duration"]
-                    df_to_save.at[index, "Horas Invertidas"] = calculated_data[t_id]["Horas Invertidas"]
-                    
-        if "End Date" in df_to_save.columns:
-            df_to_save = df_to_save.drop(columns=["End Date"])
-
-        conn.update(spreadsheet=SHEET_URL, worksheet=TAB_NAME, data=df_to_save)
-        st.success("¡Base de datos actualizada! Todas las fechas encajan perfectamente a través de la duración.")
-        st.cache_data.clear() 
-    except Exception as e:
-        st.error(f"Error al guardar: {e}")
-
-try:
+    # Formatear para graficar
     final_tasks = []
     fecha_hoy_segura = pd.to_datetime(hoy)
     
@@ -334,6 +251,7 @@ try:
     final_df = pd.DataFrame(final_tasks)
     
     if not final_df.empty:
+        # === CREAR ESPACIO VISUAL ENTRE TAREAS SECUENCIALES ===
         def adjust_finish_for_plot(row):
             if row["Finish"] == row["Original_Finish"]:
                 return row["Finish"] - pd.Timedelta(hours=3)
@@ -342,8 +260,8 @@ try:
         final_df["Plot_Finish"] = final_df.apply(adjust_finish_for_plot, axis=1)
         
         def get_sort_key(row_data):
-            p_id = row_data["Parent Task ID"]
-            t_id = row_data["Task ID"]
+            p_id = row_data["Parent ID Fase"]
+            t_id = row_data["ID Fase"]
             
             if p_id and p_id in calculated_data:
                 parent_start = calculated_data[p_id]["Original_Start"].timestamp()
@@ -352,6 +270,7 @@ try:
                     root_start = calculated_data[root_id]["Original_Start"].timestamp()
                 else:
                     root_start = row_data['Original_Start'].timestamp()
+                    
                 return f"{parent_start}_1_{root_start}_{root_id}" 
             elif t_id in padres_ids:
                 return f"{row_data['Original_Start'].timestamp()}_0_0_{t_id}"
@@ -359,58 +278,63 @@ try:
                 return f"{row_data['Original_Start'].timestamp()}_0_0_{t_id}"
 
         final_df["Sort_Key"] = final_df.apply(get_sort_key, axis=1)
-        
-        project_starts = final_df.groupby("Project Name")["Original_Start"].min().to_dict()
-        final_df["Project_Min_Start"] = final_df["Project Name"].map(project_starts)
-        final_df = final_df.sort_values(by=["Project_Min_Start", "Project Name", "Sort_Key", "Original_Start"])
+        final_df = final_df.sort_values(by=["Número de Fase", "Sort_Key", "Original_Start"])
         
         def get_y_axis_name(row_data):
-            p_id = row_data["Parent Task ID"]
-            t_id = row_data["Task ID"]
+            p_id = row_data["Parent ID Fase"]
+            t_id = row_data["ID Fase"]
             
             if p_id and p_id in calculated_data:
                 return row_data.get("Track_Name", f"   ↳ Subtareas")
             elif t_id in padres_ids:
-                return f"📂 {row_data['Task Name']}"
+                return f"📂 {row_data['Nombre de Tarea']}"
             else:
-                return row_data["Task Name"]
+                return row_data["Nombre de Tarea"]
 
-        final_df["Llave_Secreta"] = final_df["Project Name"].astype(str) + "|||" + final_df.apply(get_y_axis_name, axis=1)
+        final_df["Llave_Secreta"] = final_df["Número de Fase"].astype(str) + "|||" + final_df.apply(get_y_axis_name, axis=1)
         
         final_df["Orig_Start_str"] = final_df["Original_Start"].dt.strftime('%d %b')
-        final_df["Display_Finish_str"] = (final_df["Original_Finish"] - pd.Timedelta(days=1)).dt.strftime('%d %b')
+        final_df["Orig_Finish_str"] = final_df["Original_Finish"].dt.strftime('%d %b')
         
         def generar_label(x):
-            if x.get("Hide_Label", False): return ""
+            if x.get("Hide_Label", False):
+                return ""
+                
             return (
-                f"<b>{x['Project Name']} - {x['Task Name']}</b><br>"
-                f"{x['Orig_Start_str']} a {x['Display_Finish_str']} - {x['Duration']} días<br>"
+                f"<b>{x['Número de Fase']} - {x['Nombre de Tarea']}</b><br>"
+                f"{x['Orig_Start_str']} a {x['Orig_Finish_str']} - {x['Duration']} días<br>"
                 f"{x['Horas Invertidas']} hrs<br>"
                 f"{x['Responsable(s)']}"
             )
 
         final_df["Label"] = final_df.apply(generar_label, axis=1)
-        final_df["Color_Key"] = final_df.apply(lambda row: f"{row['Task ID']} (Completado)" if row["Status"] == "Pasado" else row["Task ID"], axis=1)
+        
+        final_df["Color_Key"] = final_df.apply(
+            lambda row: f"{row['ID Fase']} (Completado)" if row["Status"] == "Pasado" else row["ID Fase"], 
+            axis=1
+        )
         
         color_map = {} 
         pastel_colors = px.colors.qualitative.Pastel
         color_idx = 0
+        
         project_default_colors = {}
-        for p in final_df["Project Name"].unique():
+        for p in final_df["Número de Fase"].unique():
             project_default_colors[p] = pastel_colors[color_idx % len(pastel_colors)]
             color_idx += 1
             
         for index, row in final_df.iterrows():
-            tid = row["Task ID"]
+            tid = row["ID Fase"]
             active_key = tid
             past_key = f"{tid} (Completado)"
             
             if active_key not in color_map:
                 user_color = str(row.get("Color_Raw", "Por defecto")).strip()
+                
                 if user_color != "Por defecto" and user_color in COLOR_MAP_ESP:
                     base_color = COLOR_MAP_ESP[user_color]
                 else:
-                    base_color = project_default_colors.get(row["Project Name"], "#3366cc")
+                    base_color = project_default_colors.get(row["Número de Fase"], "#3366cc")
                     
                 color_map[active_key] = base_color
                 
@@ -422,6 +346,7 @@ try:
                         r, g, b = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4))
                     else:
                         r, g, b = 150, 150, 150
+                        
                     muted_color = f'rgba({r},{g},{b}, 0.3)'
                 except Exception:
                     muted_color = "rgba(211,211,211, 0.3)"
@@ -432,6 +357,7 @@ try:
     st.write("### 📊 Resumen del Portafolio")
     
     if not final_df.empty:
+        # === CÁLCULOS DEL RESUMEN ===
         fecha_inicio_global = final_df["Original_Start"].min()
         fecha_fin_global = final_df["Original_Finish"].max()
         
@@ -440,6 +366,7 @@ try:
         tareas_unicas = len([t for t, d in calculated_data.items() if t not in padres_ids])
         total_horas = sum([d["Horas Invertidas"] for t, d in calculated_data.items() if t not in padres_ids])
         
+        # Cálculos de Tareas y Proyectos Activos
         tareas_activas = 0
         proyectos_stats = {}
         
@@ -447,21 +374,25 @@ try:
             o_start = data["Original_Start"].date()
             o_finish = data["Original_Finish"].date()
             
+            # Contar tareas activas (solo tareas hijas directas)
             if t_id not in padres_ids:
                 if o_start <= hoy < o_finish:
                     tareas_activas += 1
                     
-            proj = data["Project Name"]
+            # Registrar inicios y fines de cada proyecto
+            proj = data["Número de Fase"]
             if proj not in proyectos_stats:
                 proyectos_stats[proj] = {"inicio": o_start, "fin": o_finish}
             else:
                 if o_start < proyectos_stats[proj]["inicio"]: proyectos_stats[proj]["inicio"] = o_start
                 if o_finish > proyectos_stats[proj]["fin"]: proyectos_stats[proj]["fin"] = o_finish
                 
+        # Contar cuántos proyectos están en su ventana de tiempo activa
         proyectos_activos = sum(1 for p, dates in proyectos_stats.items() if dates["inicio"] <= hoy < dates["fin"])
 
+        # === DIBUJAR MÉTRICAS EN 6 COLUMNAS ===
         col1, col2, col3, col4, col5, col6 = st.columns(6)
-        col1.metric("⏳ Duración Portafolio", f"{dias_totales} días")
+        col1.metric("⏳ Duración Total", f"{dias_totales} días")
         col2.metric("📅 Días Restantes", f"{dias_restantes} días")
         col3.metric("📝 Total de Tareas", tareas_unicas)
         col4.metric("⏱️ Horas Totales", f"{total_horas} hrs")
@@ -483,8 +414,8 @@ try:
                 "Color_Key": False,
                 "Llave_Secreta": False,
                 "Plot_Finish": False,
-                "Project Name": True,
-                "Parent Task ID": True,
+                "Número de Fase": True,
+                "Parent ID Fase": True,
                 "Responsable(s)": True,
                 "Dependency Info": True
             },
@@ -503,10 +434,12 @@ try:
                 tareas = [str(val).split("|||")[1] for val in trace.y]
                 trace.y = [proyectos, tareas] 
                 
+        # === LÓGICA DE HITOS (MILESTONES) ===
         hitos_unicos = set()
+        
         fechas_fin_proy = {}
         for idx, row in final_df.iterrows():
-            p = row["Project Name"]
+            p = row["Número de Fase"]
             f = row["Original_Finish"]
             t = row["Llave_Secreta"].split("|||")[1] 
             if p not in fechas_fin_proy or f > fechas_fin_proy[p]["fecha"]:
@@ -516,8 +449,8 @@ try:
             hitos_unicos.add((p, datos["tarea"], datos["fecha"]))
             
         for idx, row in final_df.iterrows():
-            if "Independiente" in row["Dependency Info"] and row["Task ID"] not in padres_ids:
-                hitos_unicos.add((row["Project Name"], row["Llave_Secreta"].split("|||")[1], row["Original_Finish"]))
+            if "Independiente" in row["Dependency Info"] and row["ID Fase"] not in padres_ids:
+                hitos_unicos.add((row["Número de Fase"], row["Llave_Secreta"].split("|||")[1], row["Original_Finish"]))
                 
         hitos_x = []
         hitos_y_proy = []
@@ -597,15 +530,16 @@ try:
 
     st.write("---")
     
+    # === TABLA DE REPORTES ===
     st.write("### 📋 Reporte Final Descargable")
     with st.expander("Haz clic aquí para ver y descargar el reporte completo", expanded=True):
         
         table_data = []
         for t_id, data in calculated_data.items():
             o_start = data["Original_Start"]
-            disp_finish = data["Original_Finish"] - pd.Timedelta(days=1)
+            o_finish = data["Original_Finish"]
             
-            if data["Original_Finish"].date() <= hoy:
+            if o_finish.date() <= hoy:
                 status = "Completado ✅"
             elif o_start.date() > hoy:
                 status = "Pendiente ⏳"
@@ -614,13 +548,32 @@ try:
                 
             table_data.append({
                 "ID": t_id,
-                "Parent Task ID": data["Parent Task ID"] if data["Parent Task ID"] else "-",
-                "Proyecto": data["Project Name"],
-                "Tarea": data["Task Name"],
+                "Parent ID Fase": data["Parent ID Fase"] if data["Parent ID Fase"] else "-",
+                "Proyecto": data["Número de Fase"],
+                "Tarea": data["Nombre de Tarea"],
                 "Responsable(s)": data["Responsable(s)"],
                 "Horas": data["Horas Invertidas"],
                 "Inicio": o_start.strftime("%d/%m/%Y"),
-                "Fin": disp_finish.strftime("%d/%m/%Y"), 
+                "Fin": o_finish.strftime("%d/%m/%Y"),
                 "Duración": f"{data['Duration']} días",
                 "Estado": status,
-                "Dependencia": data["Dependencia"],
+                "Dependencia": data["Dependency Info"].replace("🔗", "").replace("🟢", "").replace("📂", "").strip(),
+                "Notas Extra": data["Notas Extra"]
+            })
+        
+        df_table = pd.DataFrame(table_data)
+        
+        st.dataframe(df_table, use_container_width=True, hide_index=True)
+        
+        csv = df_table.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Reporte Completo (Excel / CSV)",
+            data=csv,
+            file_name='reporte_cronograma.csv',
+            mime='text/csv',
+        )
+
+except KeyError as e:
+    st.error(f"**Error de Dependencia:** La tarea de la que dependes no se calculó bien o le falta información. Detalles: {e}")
+except Exception as e:
+    st.error(f"Hubo un problema procesando los datos. Detalles técnicos: {e}")
