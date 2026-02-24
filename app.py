@@ -212,4 +212,39 @@ try:
             dur = max(1, (f - s).days)
             
             calculated_data[tid]["Original_Start"] = s
-            calculated_data[tid]["Original_Finish"] =
+            calculated_data[tid]["Original_Finish"] = f
+            calculated_data[tid]["Duration"] = dur
+            calculated_data[tid]["Horas Invertidas"] = horas_totales
+            
+            if not data["Responsable(s)"]:
+                calculated_data[tid]["Responsable(s)"] = ", ".join(list(resps))
+                
+            calculated_data[tid]["Dependency Info"] = "Tarea Padre 📂"
+            
+        else:
+            dep_id = data["Depends_On_ID"]
+            manual_s = data["Manual_Start"]
+            dur = data["Manual_Duration"]
+            
+            if dep_id and dep_id in calculated_data:
+                _, dep_f = compute_dates(dep_id)
+                s = dep_f 
+                calculated_data[tid]["Dependency Info"] = f"Depende de: {dep_id} 🔗"
+            else:
+                s = manual_s if manual_s else default_start
+                calculated_data[tid]["Dependency Info"] = "Independiente 🟢"
+                
+            f = s + pd.Timedelta(days=dur)
+            
+            calculated_data[tid]["Original_Start"] = s
+            calculated_data[tid]["Original_Finish"] = f
+            calculated_data[tid]["Duration"] = dur
+            
+        resolving.remove(tid)
+        visited.add(tid)
+        return calculated_data[tid]["Original_Start"], calculated_data[tid]["Original_Finish"]
+        
+    for tid in calculated_data:
+        compute_dates(tid)
+        
+    pad
